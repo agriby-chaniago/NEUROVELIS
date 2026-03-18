@@ -101,6 +101,17 @@ CSV_FIELDNAMES = [
     "ads1_ch1_V",
     "ads2_ch0_V",
     "ads2_ch1_V",
+    # ── Model inference (4-class realtime) ──
+    "model_label_top1",
+    "model_confidence_top1",
+    "model_probs_normal",
+    "model_probs_anxiety",
+    "model_probs_stress",
+    "model_probs_depression",
+    "model_alert_active",
+    "model_alert_reasons",
+    "model_latency_ms",
+    "model_timestamp_utc",
     # ── Alerts ──
     "alert_active",         # True jika ada kondisi bahaya saat pembacaan ini
     "alert_reasons",        # deskripsi kondisi bahaya, dipisah koma
@@ -211,3 +222,29 @@ ACTIVE_SENSORS = {
     "gsr":      True,
     "ads1115":  False,  # Set True setelah ADS1115 tersambung ke Pi
 }
+
+# ─── Model Inference (Multimodal 4-class) ───────────────────────────────
+# Backend type:
+#   rule_based  -> deterministic baseline for MVP (no external model file)
+#   sklearn_pickle -> scikit-learn model + scaler artifacts
+#   pytorch/onnx/tensorflow -> reserved for future model integration
+MODEL_INFERENCE_ENABLED = True
+MODEL_INFERENCE_BACKEND = "sklearn_pickle"
+MODEL_INFERENCE_INTERVAL_S = 1.0
+MODEL_INFERENCE_TIMEOUT_MS = 800
+MODEL_INFERENCE_MODEL_PATH = os.path.join(
+    os.path.dirname(__file__), "ml", "artifacts", "model.pkl"
+)
+MODEL_INFERENCE_SCALER_PATH = os.path.join(
+    os.path.dirname(__file__), "ml", "artifacts", "scaler.pkl"
+)
+MODEL_INFERENCE_MIN_POINTS = 8
+
+# Final class order for the dashboard and API responses.
+MODEL_CLASSES = ["normal", "anxiety", "stress", "depression"]
+
+# If camera frame or essential sensor data is missing, force Unknown/No Signal.
+MODEL_UNKNOWN_ON_MISSING_DATA = True
+
+# Alert when top-1 class is not normal and confidence exceeds this threshold.
+MODEL_ALERT_CONFIDENCE_THRESHOLD = 0.70

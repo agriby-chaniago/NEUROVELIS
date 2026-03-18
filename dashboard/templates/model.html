@@ -1,0 +1,121 @@
+{% extends "base.html" %} {% block title %}NEUROSENSE Model Dashboard{% endblock
+%} {% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+{% endblock %} {% block extra_style %} html, body { height: 600px; overflow:
+hidden; } header h1 { margin-right: 0; } #status-dot { width: 9px; height: 9px;
+border-radius: 50%; background: var(--muted); flex-shrink: 0; transition:
+background .3s; border: 2px solid rgba(26,43,60,.12); } #status-dot.live {
+background: var(--green); border-color: rgba(30,120,69,.3); } #status-dot.error
+{ background: var(--red); } #last-update { font-size: 0.68rem; color:
+var(--muted); white-space: nowrap; margin-right: auto; } #model-alert { display:
+none; align-items: center; gap: 0.5rem; border-radius: 5px; padding: 0.38rem
+0.72rem; font-size: 0.76rem; font-weight: 600; background: #fdecea; border: 1px
+solid #e8a09a; border-left: 4px solid var(--red); color: var(--red);
+flex-shrink: 0; } #model-alert.visible { display: flex; } .main-layout {
+display: grid; grid-template-columns: 390px 1fr; gap: 0.6rem; flex: 1;
+min-height: 0; } .left-col, .right-col { min-height: 0; display: flex;
+flex-direction: column; } .right-col { gap: 0.5rem; } .camera-card { background:
+var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding:
+0.55rem 0.7rem 0.5rem; box-shadow: var(--shadow); display: flex; flex-direction:
+column; flex: 1; min-height: 0; } .camera-card h3 { font-size: 0.68rem; color:
+var(--muted); text-transform: uppercase; letter-spacing: 0.07em; font-weight:
+600; margin-bottom: 0.4rem; } .camera-wrap { position: relative; flex: 1;
+min-height: 0; border-radius: 5px; border: 1px solid var(--border); overflow:
+hidden; } #camera-feed { width: 100%; height: 100%; object-fit: cover; display:
+block; } #camera-fps { position: absolute; bottom: 6px; right: 6px; background:
+rgba(0,0,0,.55); color: #fff; font-size: 0.65rem; font-weight: 700; padding: 2px
+7px; border-radius: 4px; letter-spacing: .04em; pointer-events: none;
+font-family: monospace; } .metrics-grid { display: grid; grid-template-columns:
+repeat(3, 1fr); gap: 0.45rem; flex-shrink: 0; } .metric-card { background:
+var(--card-bg); border: 1px solid var(--border); border-radius: 7px; padding:
+0.45rem 0.4rem 0.35rem; text-align: center; box-shadow: var(--shadow); }
+.metric-card .label { font-size: 0.62rem; color: var(--muted); text-transform:
+uppercase; letter-spacing: .06em; font-weight: 600; } .metric-card .value {
+font-size: 1.35rem; font-weight: 700; line-height: 1.15; margin: 0.1rem 0; }
+.metric-card .unit { font-size: 0.62rem; color: var(--muted); }
+.metric-card.pred .value { color: var(--accent); } .metric-card.conf .value {
+color: #1e7845; } .metric-card.state .value { color: #5e35b1; } .metric-card.lat
+.value { color: #c25d00; } .metric-card.signal .value { color: #0277bd;
+font-size: 1rem; } .metric-card.reason .value { color: #b71c1c; font-size:
+0.84rem; } .charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap:
+0.45rem; flex: 1; min-height: 0; } .chart-card { background: var(--card-bg);
+border: 1px solid var(--border); border-radius: 7px; padding: 0.45rem 0.55rem;
+box-shadow: var(--shadow); display: flex; flex-direction: column; min-height: 0;
+} .chart-card h3 { font-size: 0.6rem; color: var(--muted); text-transform:
+uppercase; letter-spacing: .06em; font-weight: 600; margin-bottom: .25rem;
+flex-shrink: 0; } .chart-card canvas { flex: 1; min-height: 0; width: 100%
+!important; } {% endblock %} {% block header_before_h1 %}
+<div id="status-dot"></div>
+{% endblock %} {% block header_after_h1 %}
+<span id="last-update">Waiting for model data…</span>
+{% endblock %} {% block banners %}
+<div id="model-alert">
+  <span>&#9888;</span>
+  <span id="model-alert-text"></span>
+</div>
+{% endblock %} {% block content %}
+<div class="main-layout">
+  <div class="left-col">
+    <div class="camera-card">
+      <h3>&#127909; Camera Feed</h3>
+      <div class="camera-wrap">
+        <img id="camera-feed" src="/camera/stream" alt="Camera stream" />
+        <span id="camera-fps">— fps</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="right-col">
+    <div class="metrics-grid">
+      <div class="metric-card pred">
+        <div class="label">Top Class</div>
+        <div class="value" id="val-top-class">UNKNOWN</div>
+        <div class="unit">4-class</div>
+      </div>
+      <div class="metric-card conf">
+        <div class="label">Confidence</div>
+        <div class="value" id="val-confidence">—</div>
+        <div class="unit">%</div>
+      </div>
+      <div class="metric-card state">
+        <div class="label">Model State</div>
+        <div class="value" id="val-state">INIT</div>
+        <div class="unit">service</div>
+      </div>
+      <div class="metric-card lat">
+        <div class="label">Latency</div>
+        <div class="value" id="val-latency">—</div>
+        <div class="unit">ms</div>
+      </div>
+      <div class="metric-card signal">
+        <div class="label">Signal</div>
+        <div class="value" id="val-signal">NO SIGNAL</div>
+        <div class="unit">camera+sensor</div>
+      </div>
+      <div class="metric-card reason">
+        <div class="label">Reason</div>
+        <div class="value" id="val-reason">—</div>
+        <div class="unit">status</div>
+      </div>
+    </div>
+
+    <div class="charts-grid">
+      <div class="chart-card">
+        <h3>Class Probability (Current)</h3>
+        <canvas id="chart-prob"></canvas>
+      </div>
+      <div class="chart-card">
+        <h3>Top-1 Confidence Trend (60 s)</h3>
+        <canvas id="chart-conf"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %} {% block footer %}
+<footer>
+  NEUROSENSE Model Dashboard — 1024x600 fixed layout —
+  <span id="footer-ts"></span>
+</footer>
+{% endblock %} {% block scripts %}
+<script src="/static/js/model_dashboard.js"></script>
+{% endblock %}

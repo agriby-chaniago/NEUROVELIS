@@ -22,6 +22,7 @@ from sensors.sensor_manager import SensorManager
 from dashboard.app import create_app
 from experiments.session_manager import SessionManager
 from experiments.respondent_registry import RespondentRegistry
+from ml.model_inference_service import ModelInferenceService
 
 
 # ── Logging setup ────────────────────────────────────────────────────────────
@@ -85,6 +86,13 @@ def main():
     # ── Give sensors a moment to get first readings ────────────────────
     time.sleep(2)
 
+    # ── Start model inference service (multimodal: sensor + camera) ───
+    model_inference_service = ModelInferenceService(
+        sensor_manager=sensor_manager,
+        camera_reader=camera_reader,
+    )
+    model_inference_service.start()
+
     # ── Initialise experiment modules ────────────────────────────────
     respondent_registry = RespondentRegistry()
     session_manager     = SessionManager(
@@ -99,6 +107,7 @@ def main():
         camera_reader=camera_reader,
         session_manager=session_manager,
         respondent_registry=respondent_registry,
+        model_inference_service=model_inference_service,
     )
 
     # ── Graceful shutdown on Ctrl+C / SIGTERM ────────────────────────────
@@ -113,6 +122,7 @@ def main():
             logger.warning("Could not stop active session during shutdown: %s", exc)
         sensor_manager.stop()
         csv_logger.stop()
+        model_inference_service.stop()
         if camera_reader is not None:
             camera_reader.stop()
         logger.info("NEUROSENSE stopped cleanly.")

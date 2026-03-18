@@ -252,6 +252,18 @@ class SensorManager:
             snapshot["sensor_last_update_s"] = round(elapsed, 1) if self._last_update_mono > 0.0 else None
         return snapshot
 
+    def set_model_inference(self, inference_data: dict[str, Any]):
+        """Merge model inference fields into latest_data without touching buzzer logic.
+
+        Inference runs independently from sensor threads; this method lets the
+        model pipeline publish top-1 class/probabilities that will be picked up
+        by dashboards and subsequent CSV snapshots.
+        """
+        if not isinstance(inference_data, dict):
+            return
+        with self._lock:
+            self.latest_data.update(inference_data)
+
     def recalibrate_sensor(self, name: str) -> dict:
         """
         Trigger runtime recalibration for a specific sensor by name.

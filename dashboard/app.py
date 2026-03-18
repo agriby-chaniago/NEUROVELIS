@@ -41,6 +41,7 @@ _sensor_manager    = None
 _camera_reader:    Optional[object] = None
 _session_manager:  Optional[object] = None
 _respondent_registry: Optional[object] = None
+_model_inference_service: Optional[object] = None
 
 
 def create_app(
@@ -48,6 +49,7 @@ def create_app(
     camera_reader=None,
     session_manager=None,
     respondent_registry=None,
+    model_inference_service=None,
 ) -> Flask:
     """
     Factory function — creates and configures the Flask app.
@@ -59,11 +61,12 @@ def create_app(
     session_manager     : SessionManager        (optional)
     respondent_registry : RespondentRegistry    (optional)
     """
-    global _sensor_manager, _camera_reader, _session_manager, _respondent_registry
+    global _sensor_manager, _camera_reader, _session_manager, _respondent_registry, _model_inference_service
     _sensor_manager      = sensor_manager
     _camera_reader       = camera_reader
     _session_manager     = session_manager
     _respondent_registry = respondent_registry
+    _model_inference_service = model_inference_service
 
     app = Flask(__name__, template_folder="templates", static_folder="static")
     app.config["SECRET_KEY"] = "neurosense-dev-key"
@@ -83,6 +86,8 @@ def create_app(
         def event_generator():
             while True:
                 data = _sensor_manager.get_latest()
+                if _model_inference_service is not None:
+                    data.update(_model_inference_service.get_latest())
                 # Attach live camera FPS so the dashboard can display it
                 if _camera_reader is not None:
                     _fps = _camera_reader.fps
@@ -163,6 +168,19 @@ def create_app(
     def snapshot():
         """Return a single JSON snapshot of latest sensor readings."""
         return jsonify(_sensor_manager.get_latest())
+
+    @app.route("/model")
+    def model_dashboard():
+        """Dedicated realtime 4-class model dashboard (fixed 1024x600 layout)."""
+        return render_template("model.html")
+
+    @app.route("/model/snapshot")
+    def model_snapshot():
+        """Return current model inference snapshot (plus latest sensor state)."""
+        payload = _sensor_manager.get_latest()
+        if _model_inference_service is not None:
+            payload.update(_model_inference_service.get_latest())
+        return jsonify(payload)
 
     @app.route("/recalibrate/<sensor_name>", methods=["POST"])
     def recalibrate(sensor_name: str):
