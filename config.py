@@ -233,10 +233,10 @@ MODEL_INFERENCE_BACKEND = "sklearn_pickle"
 MODEL_INFERENCE_INTERVAL_S = 1.0
 MODEL_INFERENCE_TIMEOUT_MS = 800
 MODEL_INFERENCE_MODEL_PATH = os.path.join(
-    os.path.dirname(__file__), "ml", "artifacts", "model.pkl"
+    os.path.dirname(__file__), "model_inference", "artifacts", "model.pkl"
 )
 MODEL_INFERENCE_SCALER_PATH = os.path.join(
-    os.path.dirname(__file__), "ml", "artifacts", "scaler.pkl"
+    os.path.dirname(__file__), "model_inference", "artifacts", "scaler.pkl"
 )
 MODEL_INFERENCE_MIN_POINTS = 8
 
@@ -248,3 +248,9 @@ MODEL_UNKNOWN_ON_MISSING_DATA = True
 
 # Alert when top-1 class is not normal and confidence exceeds this threshold.
 MODEL_ALERT_CONFIDENCE_THRESHOLD = 0.70
+
+# Force Unknown when top-1 confidence is below this threshold.
+MODEL_UNKNOWN_CONFIDENCE_THRESHOLD = 0.50
+
+# EMA smoothing for class probabilities (0<alpha<=1). Lower = smoother.
+MODEL_SMOOTHING_ALPHA = 0.35

@@ -136,7 +136,7 @@ class TestGSRConversions:
 class TestCSVLogger:
     def test_logger_enqueues_and_writes(self, tmp_path, monkeypatch):
         monkeypatch.setattr(config, "DATA_DIR", str(tmp_path))
-        from logging_module.csv_logger import CSVLogger
+        from data_logging.csv_logger import CSVLogger
         import time
 
         logger = CSVLogger(data_dir=str(tmp_path))

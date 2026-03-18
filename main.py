@@ -17,12 +17,12 @@ import sys
 import time
 
 import config
-from logging_module.csv_logger import CSVLogger
+from data_logging.csv_logger import CSVLogger
 from sensors.sensor_manager import SensorManager
 from dashboard.app import create_app
 from experiments.session_manager import SessionManager
 from experiments.respondent_registry import RespondentRegistry
-from ml.model_inference_service import ModelInferenceService
+from model_inference.model_inference_service import ModelInferenceService
 
 
 # ── Logging setup ────────────────────────────────────────────────────────────

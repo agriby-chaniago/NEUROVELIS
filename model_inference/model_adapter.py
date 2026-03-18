@@ -44,6 +44,24 @@ def _unknown_payload(reason: str) -> dict:
     }
 
 
+def _apply_confidence_guard(result: dict) -> dict:
+    """Force unknown label when confidence is too low."""
+    conf = result.get("model_confidence_top1")
+    label = result.get("model_label_top1")
+    if label in config.MODEL_CLASSES and conf is not None:
+        try:
+            conf_f = float(conf)
+        except Exception:
+            return result
+        if conf_f < config.MODEL_UNKNOWN_CONFIDENCE_THRESHOLD:
+            guarded = dict(result)
+            guarded["model_label_top1"] = "unknown"
+            guarded["model_alert_active"] = False
+            guarded["model_alert_reasons"] = f"LOW_CONF:{round(conf_f, 3)}"
+            return guarded
+    return result
+
+
 @dataclass
 class ModelAdapter:
     """Simple adapter that dispatches to the configured backend type."""
@@ -98,6 +116,19 @@ class ModelAdapter:
             self._load_error = f"SKLEARN_DEPENDENCY_MISSING:{exc}"
         except Exception as exc:
             self._load_error = f"MODEL_LOAD_ERROR:{exc}"
+
+    def health(self) -> dict:
+        """Return adapter state for diagnostics."""
+        return {
+            "backend": self.backend,
+            "model_path": self.model_path,
+            "scaler_path": self.scaler_path,
+            "model_loaded": self._model is not None,
+            "scaler_loaded": self._scaler is not None,
+            "load_error": self._load_error,
+            "classes": list(self._classes),
+            "feature_names": list(self._feature_names),
+        }
 
     def predict(
         self,
@@ -176,7 +207,7 @@ class ModelAdapter:
                 and conf_top1 >= config.MODEL_ALERT_CONFIDENCE_THRESHOLD
             )
 
-            return {
+            result = {
                 "model_label_top1": label_top1,
                 "model_confidence_top1": round(conf_top1, 4) if conf_top1 is not None else None,
                 "model_probs_normal": round(float(probs["normal"]), 4),
@@ -190,6 +221,7 @@ class ModelAdapter:
                     else ""
                 ),
             }
+            return _apply_confidence_guard(result)
         except Exception as exc:
             return _unknown_payload(f"MODEL_PREDICT_ERROR:{exc}")
 
@@ -243,7 +275,7 @@ def _predict_rule_based(sensor_data: dict, frame_bytes: Optional[bytes]) -> dict
     conf_top1 = float(probs[label_top1])
     model_alert = label_top1 != "normal" and conf_top1 >= config.MODEL_ALERT_CONFIDENCE_THRESHOLD
 
-    return {
+    result = {
         "model_label_top1": label_top1,
         "model_confidence_top1": round(conf_top1, 4),
         "model_probs_normal": round(float(probs["normal"]), 4),
@@ -257,3 +289,4 @@ def _predict_rule_based(sensor_data: dict, frame_bytes: Optional[bytes]) -> dict
             else ""
         ),
     }
+    return _apply_confidence_guard(result)

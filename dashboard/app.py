@@ -118,7 +118,10 @@ def create_app(
         sensors = _sensor_manager.health()
         if _camera_reader is not None:
             sensors.append(_camera_reader.health())
-        return jsonify({"status": "ok", "sensors": sensors})
+        model = None
+        if _model_inference_service is not None:
+            model = _model_inference_service.health()
+        return jsonify({"status": "ok", "sensors": sensors, "model": model})
 
     @app.route("/camera/stream")
     def camera_stream():
@@ -181,6 +184,13 @@ def create_app(
         if _model_inference_service is not None:
             payload.update(_model_inference_service.get_latest())
         return jsonify(payload)
+
+    @app.route("/model/debug")
+    def model_debug():
+        """Detailed model diagnostics: adapter state, features, and latest output."""
+        if _model_inference_service is None:
+            return jsonify({"status": "error", "message": "Model service not available"}), 503
+        return jsonify(_model_inference_service.debug_snapshot())
 
     @app.route("/recalibrate/<sensor_name>", methods=["POST"])
     def recalibrate(sensor_name: str):

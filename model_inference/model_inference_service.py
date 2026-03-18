@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import config
-from ml.model_adapter import ModelAdapter, _unknown_payload
+from model_inference.model_adapter import ModelAdapter, _unknown_payload
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +30,9 @@ class ModelInferenceService:
         self._lock = threading.Lock()
         self._history: deque = deque()
         self._prev_frame: Optional[bytes] = None
+        self._smoothed_probs: Optional[dict[str, float]] = None
+        self._last_feature_vector: Optional[dict[str, float]] = None
+        self._last_feature_timestamp_utc: Optional[str] = None
         self._latest: dict = {
             "model_label_top1": "unknown",
             "model_confidence_top1": None,
@@ -72,6 +75,36 @@ class ModelInferenceService:
         with self._lock:
             return dict(self._latest)
 
+    def health(self) -> dict:
+        """Return service health for /health endpoint."""
+        with self._lock:
+            latest = dict(self._latest)
+        adapter_health = self._adapter.health()
+        return {
+            "sensor": "model_inference",
+            "ok": latest.get("model_label_top1") != "unknown" or not adapter_health.get("load_error"),
+            "backend": adapter_health.get("backend"),
+            "model_loaded": adapter_health.get("model_loaded"),
+            "scaler_loaded": adapter_health.get("scaler_loaded"),
+            "last_error": adapter_health.get("load_error") or latest.get("model_alert_reasons"),
+            "last_label": latest.get("model_label_top1"),
+            "last_confidence": latest.get("model_confidence_top1"),
+            "last_latency_ms": latest.get("model_latency_ms"),
+        }
+
+    def debug_snapshot(self) -> dict:
+        """Return detailed model debug payload for troubleshooting."""
+        with self._lock:
+            latest = dict(self._latest)
+            fv = dict(self._last_feature_vector) if self._last_feature_vector else None
+        return {
+            "latest": latest,
+            "feature_vector": fv,
+            "feature_timestamp_utc": self._last_feature_timestamp_utc,
+            "history_points": len(self._history),
+            "adapter": self._adapter.health(),
+        }
+
     def _loop(self):
         interval = max(0.1, float(config.MODEL_INFERENCE_INTERVAL_S))
         timeout_ms = max(1, int(config.MODEL_INFERENCE_TIMEOUT_MS))
@@ -83,6 +116,10 @@ class ModelInferenceService:
             frame = self._camera_reader.get_frame() if self._camera_reader is not None else None
             self._append_history(sensor_data=sensor_data, frame=frame)
             feature_vector = self._build_feature_vector(min_points=min_points)
+            if feature_vector is not None:
+                with self._lock:
+                    self._last_feature_vector = dict(feature_vector)
+                    self._last_feature_timestamp_utc = datetime.now(timezone.utc).isoformat()
 
             try:
                 result = self._adapter.predict(
@@ -104,6 +141,8 @@ class ModelInferenceService:
             else:
                 result["model_latency_ms"] = latency_ms
 
+            result = self._apply_smoothing(result)
+
             result["model_timestamp_utc"] = datetime.now(timezone.utc).isoformat()
 
             with self._lock:
@@ -114,6 +153,47 @@ class ModelInferenceService:
 
             elapsed = time.monotonic() - start
             self._stop_event.wait(timeout=max(0.0, interval - elapsed))
+
+    def _apply_smoothing(self, result: dict) -> dict:
+        """EMA smoothing on class probabilities to reduce UI flicker."""
+        probs = {
+            "normal": float(result.get("model_probs_normal", 0.0) or 0.0),
+            "anxiety": float(result.get("model_probs_anxiety", 0.0) or 0.0),
+            "stress": float(result.get("model_probs_stress", 0.0) or 0.0),
+            "depression": float(result.get("model_probs_depression", 0.0) or 0.0),
+        }
+        total = sum(probs.values())
+        if total <= 0.0 or result.get("model_label_top1") == "unknown":
+            self._smoothed_probs = None
+            return result
+
+        alpha = max(0.01, min(1.0, float(config.MODEL_SMOOTHING_ALPHA)))
+        if self._smoothed_probs is None:
+            self._smoothed_probs = dict(probs)
+        else:
+            for k in self._smoothed_probs:
+                self._smoothed_probs[k] = alpha * probs[k] + (1.0 - alpha) * self._smoothed_probs[k]
+
+        smooth_total = sum(self._smoothed_probs.values()) or 1.0
+        normalized = {k: v / smooth_total for k, v in self._smoothed_probs.items()}
+        label_top1 = max(normalized, key=lambda k: normalized[k])
+        conf_top1 = normalized[label_top1]
+
+        out = dict(result)
+        out["model_label_top1"] = label_top1
+        out["model_confidence_top1"] = round(conf_top1, 4)
+        out["model_probs_normal"] = round(normalized["normal"], 4)
+        out["model_probs_anxiety"] = round(normalized["anxiety"], 4)
+        out["model_probs_stress"] = round(normalized["stress"], 4)
+        out["model_probs_depression"] = round(normalized["depression"], 4)
+        out["model_alert_active"] = (
+            label_top1 != "normal" and conf_top1 >= config.MODEL_ALERT_CONFIDENCE_THRESHOLD
+        )
+        if out["model_alert_active"]:
+            out["model_alert_reasons"] = f"CLASS={label_top1.upper()} CONF={round(conf_top1, 3)}"
+        elif str(out.get("model_alert_reasons", "")).startswith("CLASS="):
+            out["model_alert_reasons"] = ""
+        return out
 
     def _append_history(self, sensor_data: dict, frame: Optional[bytes]):
         now = time.monotonic()

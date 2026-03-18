@@ -51,6 +51,16 @@ SESSION_SENSOR_FIELDS = [
     "temperature_celsius",
     "gsr_raw_adc",
     "gsr_conductance_us",
+    # Model outputs
+    "model_label_top1",
+    "model_confidence_top1",
+    "model_probs_normal",
+    "model_probs_anxiety",
+    "model_probs_stress",
+    "model_probs_depression",
+    "model_alert_active",
+    "model_alert_reasons",
+    "model_latency_ms",
 ]
 
 
@@ -303,6 +313,15 @@ class SessionManager:
                     "temperature_celsius": data.get("temperature_celsius"),
                     "gsr_raw_adc":         data.get("gsr_raw_adc"),
                     "gsr_conductance_us":  data.get("gsr_conductance_us"),
+                    "model_label_top1":    data.get("model_label_top1"),
+                    "model_confidence_top1": data.get("model_confidence_top1"),
+                    "model_probs_normal":  data.get("model_probs_normal"),
+                    "model_probs_anxiety": data.get("model_probs_anxiety"),
+                    "model_probs_stress":  data.get("model_probs_stress"),
+                    "model_probs_depression": data.get("model_probs_depression"),
+                    "model_alert_active":  data.get("model_alert_active"),
+                    "model_alert_reasons": data.get("model_alert_reasons"),
+                    "model_latency_ms":    data.get("model_latency_ms"),
                 }
                 writer.writerow(row)
                 fh.flush()

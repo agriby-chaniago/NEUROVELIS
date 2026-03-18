@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 import config
-from logging_module.csv_logger import CSVLogger
+from data_logging.csv_logger import CSVLogger
 from sensors.buzzer import Buzzer
 
 logger = logging.getLogger(__name__)

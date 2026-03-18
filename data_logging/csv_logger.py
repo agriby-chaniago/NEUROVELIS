@@ -1,5 +1,5 @@
 """
-logging_module/csv_logger.py  –  Thread-safe CSV logger using a queue + single writer thread.
+data_logging/csv_logger.py  –  Thread-safe CSV logger using a queue + single writer thread.
 
 Design: all sensor threads enqueue rows; one dedicated writer thread
 dequeues and writes. No lock contention on the file handle.
