@@ -229,12 +229,17 @@ class TestBuzzerAlerts:
     def test_cooldown_prevents_double_alert(self):
         """Second alert within cooldown period should not re-trigger."""
         b = self._make_buzzer()
-        b._last_alert_time = 9999999.0   # simulate: just alerted
+        # New buzzer logic tracks cooldown per condition key in a dict.
+        b._last_alert_time = {
+            "HR_HIGH": 9999999.0,
+            "GSR": 9999999.0,
+            "SPO2": 9999999.0,
+        }   # simulate: each relevant condition just alerted
         data = {"heart_rate_bpm": 130, "hr_valid": True,
                 "spo2_percent": 85, "spo2_valid": True,
                 "gsr_conductance_us": 25.0}
         # check_and_alert will detect conditions but _trigger should be blocked
         # We verify by checking _last_alert_time was not reset
-        original_time = b._last_alert_time
+        original_time = dict(b._last_alert_time)
         b.check_and_alert(data)
         assert b._last_alert_time == original_time   # not updated = cooldown blocked it
