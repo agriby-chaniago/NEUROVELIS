@@ -269,3 +269,7 @@ MODEL_BLINK_EAR_THRESHOLD = 0.21
 # EDA phasic event threshold (microSiemens difference per sample) used for
 # SCR feature extraction: scr_count, scr_frequency, scr_amp_*.
 MODEL_EDA_SCR_DIFF_THRESHOLD_US = 0.03
+
+# Mesh overlay stream interval for /model/mesh_stream (seconds).
+# Keep this separate from dashboard SSE interval to avoid camera lag.
+MODEL_MESH_STREAM_INTERVAL_S = 0.15

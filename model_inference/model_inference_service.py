@@ -63,6 +63,12 @@ class ModelInferenceService:
             "model_latency_ms": None,
             "model_timestamp_utc": None,
         }
+        self._mesh_latest: dict = {
+            "model_face_detected": False,
+            "model_face_landmarks": [],
+            "model_face_backend": self._visual_extractor.health().get("backend"),
+            "model_timestamp_utc": None,
+        }
 
     def start(self):
         if not config.MODEL_INFERENCE_ENABLED:
@@ -93,6 +99,20 @@ class ModelInferenceService:
     def get_latest(self) -> dict:
         with self._lock:
             return dict(self._latest)
+
+    def get_latest_compact(self) -> dict:
+        with self._lock:
+            payload = dict(self._latest)
+        # Large landmark arrays are sent through a dedicated mesh stream.
+        payload.pop("model_face_landmarks", None)
+        return payload
+
+    def get_mesh_latest(self) -> dict:
+        with self._lock:
+            return dict(self._mesh_latest)
+
+    def get_mesh_topology(self) -> list[list[int]]:
+        return self._visual_extractor.tesselation_edges()
 
     def health(self) -> dict:
         """Return service health for /health endpoint."""
@@ -180,9 +200,17 @@ class ModelInferenceService:
 
             with self._lock:
                 self._latest = dict(result)
+                self._mesh_latest = {
+                    "model_face_detected": face_detected,
+                    "model_face_landmarks": list(landmarks_norm),
+                    "model_face_backend": result.get("model_face_backend"),
+                    "model_timestamp_utc": result.get("model_timestamp_utc"),
+                }
 
             # Publish inference into shared sensor snapshot for dashboard/SSE/CSV.
-            self._sensor_manager.set_model_inference(result)
+            publish_result = dict(result)
+            publish_result.pop("model_face_landmarks", None)
+            self._sensor_manager.set_model_inference(publish_result)
 
             elapsed = time.monotonic() - start
             self._stop_event.wait(timeout=max(0.0, interval - elapsed))

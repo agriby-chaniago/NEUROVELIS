@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 import math
 from pathlib import Path
+import time
 from typing import Optional
 
 import numpy as np
@@ -82,6 +83,8 @@ class VisualFeatureExtractor:
         self._prev_motion_points: Optional[list[tuple[float, float]]] = None
         self._last_error: Optional[str] = None
         self._backend = "disabled"
+        self._tesselation_edges: list[list[int]] = self._load_tesselation_edges()
+        self._last_video_ts_ms = 0
 
         self._landmarker = None
         self._face_mesh = None
@@ -135,7 +138,7 @@ class VisualFeatureExtractor:
             base_options = mp_python.BaseOptions(model_asset_path=str(model_file))
             options = mp_vision.FaceLandmarkerOptions(
                 base_options=base_options,
-                running_mode=mp_vision.RunningMode.IMAGE,
+                running_mode=mp_vision.RunningMode.VIDEO,
                 num_faces=1,
                 min_face_detection_confidence=float(min_detection_confidence),
                 min_face_presence_confidence=float(min_tracking_confidence),
@@ -176,7 +179,31 @@ class VisualFeatureExtractor:
             "backend": self._backend,
             "last_error": self._last_error,
             "model_path": self._landmarker_model_path or None,
+            "edge_count": len(self._tesselation_edges),
         }
+
+    def tesselation_edges(self) -> list[list[int]]:
+        return list(self._tesselation_edges)
+
+    def _load_tesselation_edges(self) -> list[list[int]]:
+        if mp is None:
+            return []
+        try:
+            connections = mp.solutions.face_mesh_connections.FACEMESH_TESSELATION
+            edges = {
+                (int(a), int(b)) if int(a) < int(b) else (int(b), int(a))
+                for a, b in connections
+            }
+            return [[a, b] for a, b in sorted(edges)]
+        except Exception:
+            return []
+
+    def _next_video_ts_ms(self) -> int:
+        now_ms = int(time.monotonic() * 1000)
+        if now_ms <= self._last_video_ts_ms:
+            now_ms = self._last_video_ts_ms + 1
+        self._last_video_ts_ms = now_ms
+        return now_ms
 
     def extract(self, frame_bytes: Optional[bytes]) -> dict[str, object]:
         """Extract face dynamics features from a JPEG frame."""
@@ -211,7 +238,10 @@ class VisualFeatureExtractor:
 
             if self._landmarker is not None and mp is not None:
                 mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
-                result = self._landmarker.detect(mp_image)
+                result = self._landmarker.detect_for_video(
+                    mp_image,
+                    self._next_video_ts_ms(),
+                )
                 if result.face_landmarks:
                     return self._features_from_landmarks(
                         landmarks=result.face_landmarks[0],

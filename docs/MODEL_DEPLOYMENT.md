@@ -8,6 +8,8 @@ This document covers deployment for the realtime 4-class model dashboard.
 - Inputs: camera stream + sensor stream
 - Realtime endpoint: `/model`
 - Debug endpoint: `/model/debug`
+- Mesh stream endpoint: `/model/mesh_stream`
+- Mesh topology endpoint: `/model/mesh_topology`
 
 ## Required Files
 
@@ -45,6 +47,7 @@ Install from `requirements.txt` on the target device:
 - `MODEL_FACE_MESH_MIN_TRACKING_CONFIDENCE`
 - `MODEL_BLINK_EAR_THRESHOLD`
 - `MODEL_EDA_SCR_DIFF_THRESHOLD_US`
+- `MODEL_MESH_STREAM_INTERVAL_S`
 
 ## Startup Validation
 

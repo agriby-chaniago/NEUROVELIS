@@ -87,7 +87,10 @@ def create_app(
             while True:
                 data = _sensor_manager.get_latest()
                 if _model_inference_service is not None:
-                    data.update(_model_inference_service.get_latest())
+                    if hasattr(_model_inference_service, "get_latest_compact"):
+                        data.update(_model_inference_service.get_latest_compact())
+                    else:
+                        data.update(_model_inference_service.get_latest())
                 # Attach live camera FPS so the dashboard can display it
                 if _camera_reader is not None:
                     _fps = _camera_reader.fps
@@ -111,6 +114,40 @@ def create_app(
                 "X-Accel-Buffering": "no",   # disable nginx buffering if proxied
             },
         )
+
+    @app.route("/model/mesh_stream")
+    def model_mesh_stream():
+        """SSE stream dedicated to face mesh overlay payload."""
+        if _model_inference_service is None:
+            return Response("Model service not available", status=503)
+
+        interval = max(
+            0.05,
+            float(getattr(config, "MODEL_MESH_STREAM_INTERVAL_S", 0.15)),
+        )
+
+        def event_generator():
+            while True:
+                data = _model_inference_service.get_mesh_latest()
+                payload = json.dumps(data, default=lambda x: None)
+                yield f"data: {payload}\n\n"
+                time.sleep(interval)
+
+        return Response(
+            stream_with_context(event_generator()),
+            mimetype="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
+    @app.route("/model/mesh_topology")
+    def model_mesh_topology():
+        """Return MediaPipe FaceMesh tesselation edges for wireframe drawing."""
+        if _model_inference_service is None:
+            return jsonify({"edges": []})
+        return jsonify({"edges": _model_inference_service.get_mesh_topology()})
 
     @app.route("/health")
     def health():

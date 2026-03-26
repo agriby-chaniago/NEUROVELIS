@@ -105,6 +105,7 @@ const footerTs = document.getElementById("footer-ts");
 const cameraFeed = document.getElementById("camera-feed");
 const meshCanvas = document.getElementById("face-mesh-overlay");
 const meshCtx = meshCanvas ? meshCanvas.getContext("2d") : null;
+let meshEdges = [];
 
 function syncMeshCanvasSize() {
   if (!meshCanvas || !cameraFeed) return;
@@ -129,19 +130,37 @@ function drawFaceMesh(landmarks) {
   meshCtx.clearRect(0, 0, meshCanvas.width, meshCanvas.height);
   if (!Array.isArray(landmarks) || landmarks.length === 0) return;
 
-  meshCtx.fillStyle = "rgba(26, 95, 173, 0.75)";
-  meshCtx.strokeStyle = "rgba(26, 95, 173, 0.35)";
-  meshCtx.lineWidth = 1;
-
-  // Render dense landmark points to visualize face mesh in realtime.
-  for (const point of landmarks) {
-    if (!Array.isArray(point) || point.length < 2) continue;
+  const projected = landmarks.map((point) => {
+    if (!Array.isArray(point) || point.length < 2) return null;
     const x = Number(point[0]) * meshCanvas.width;
     const y = Number(point[1]) * meshCanvas.height;
-    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
-    meshCtx.beginPath();
-    meshCtx.arc(x, y, 1.2, 0, Math.PI * 2);
-    meshCtx.fill();
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    return [x, y];
+  });
+
+  meshCtx.strokeStyle = "rgba(26, 95, 173, 0.55)";
+  meshCtx.lineWidth = 0.8;
+  meshCtx.beginPath();
+
+  for (const edge of meshEdges) {
+    if (!Array.isArray(edge) || edge.length < 2) continue;
+    const a = projected[edge[0]];
+    const b = projected[edge[1]];
+    if (!a || !b) continue;
+    meshCtx.moveTo(a[0], a[1]);
+    meshCtx.lineTo(b[0], b[1]);
+  }
+
+  meshCtx.stroke();
+}
+
+async function loadMeshTopology() {
+  try {
+    const res = await fetch("/model/mesh_topology", { cache: "no-store" });
+    const data = await res.json();
+    meshEdges = Array.isArray(data.edges) ? data.edges : [];
+  } catch (_err) {
+    meshEdges = [];
   }
 }
 
@@ -248,7 +267,6 @@ function connect() {
     updateSignalStatus(data);
     updateAlert(data);
     updateCharts(data);
-    drawFaceMesh(data.model_face_landmarks);
 
     if (data.camera_fps !== null && data.camera_fps !== undefined) {
       setText("camera-fps", `${Number(data.camera_fps).toFixed(1)} fps`);
@@ -269,6 +287,28 @@ function connect() {
 }
 
 connect();
+
+function connectMeshStream() {
+  const es = new EventSource("/model/mesh_stream");
+
+  es.onmessage = (event) => {
+    let data;
+    try {
+      data = JSON.parse(event.data);
+    } catch (_err) {
+      return;
+    }
+    drawFaceMesh(data.model_face_landmarks);
+  };
+
+  es.onerror = () => {
+    es.close();
+    clearMeshOverlay();
+    setTimeout(connectMeshStream, RECONNECT_MS);
+  };
+}
+
+loadMeshTopology().then(connectMeshStream);
 
 const camStatus = document.getElementById("camera-status");
 const camSection = document.getElementById("camera-section");
