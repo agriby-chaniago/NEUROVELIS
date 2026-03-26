@@ -211,3 +211,23 @@ function connect() {
 }
 
 connect();
+
+const camStatus = document.getElementById("camera-status");
+const camSection = document.getElementById("camera-section");
+
+function onCameraLoad() {
+  if (camStatus) {
+    camStatus.textContent = "Live";
+    camStatus.className = "";
+  }
+}
+
+function onCameraError() {
+  if (camStatus) {
+    camStatus.textContent = "Camera not available";
+    camStatus.className = "error";
+  }
+  const feed = document.getElementById("camera-feed");
+  if (feed) feed.style.display = "none";
+  if (camSection) camSection.style.display = "none";
+}
