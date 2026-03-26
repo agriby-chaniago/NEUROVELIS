@@ -21,9 +21,12 @@ threading.Condition until the next frame arrives (zero polling latency).
 import io
 import logging
 import queue
+import struct
+import subprocess
 import threading
 import time
 from collections import deque
+from pathlib import Path
 from typing import Optional
 
 import config
@@ -49,9 +52,10 @@ class CameraReader:
         self._frame_seq: int = 0   # increments every new frame
         self._running = False
         self._thread: Optional[threading.Thread] = None
-        self._backend: Optional[str] = None   # "picamera2" | "opencv"
+        self._backend: Optional[str] = None   # "picamera2" | "worker_subprocess"
         self._error: Optional[str] = None     # last fatal error message
         self._cam = None   # picamera2 Picamera2 instance (set after start)
+        self._worker_proc: Optional[subprocess.Popen] = None
         # Rolling FPS: stores monotonic timestamps of last 60 encoded frames.
         # fps = (n-1) / (ts[-1] - ts[0])  — accurate even with variable cadence.
         self._fps_timestamps: deque = deque(maxlen=60)
@@ -74,6 +78,16 @@ class CameraReader:
     def stop(self) -> None:
         """Signal the capture thread to stop and wait for it."""
         self._running = False
+
+        # Force worker shutdown first so blocking pipe reads return promptly.
+        proc = self._worker_proc
+        if proc is not None and proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=1.0)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+
         with self._cond:
             self._cond.notify_all()   # unblock any waiting get_new_frame()
         if self._thread is not None:
@@ -140,7 +154,7 @@ class CameraReader:
 
     @property
     def backend(self) -> Optional[str]:
-        """Which backend is active: 'picamera2', 'opencv', or None if failed."""
+        """Which backend is active: 'picamera2', 'worker_subprocess', or None."""
         return self._backend
 
     @property
@@ -162,25 +176,14 @@ class CameraReader:
     # ── Main capture loop ─────────────────────────────────────────────────
 
     def _capture_loop(self):
-        """Try picamera2 first; fall back to OpenCV on failure."""
-        # ── Attempt 1: picamera2 ─────────────────────────────────────────
-        try:
-            self._loop_picamera2()
-            return   # clean exit (stop() was called)
-        except ModuleNotFoundError:
-            logger.info("CameraReader: picamera2 not installed — trying OpenCV")
-        except Exception as exc:
-            if not self._running:
-                return
-            logger.warning("CameraReader: picamera2 failed (%s) — trying OpenCV", exc)
-
-        # ── Attempt 2: OpenCV ─────────────────────────────────────────────
+        """Run camera capture through the system-python worker process."""
         try:
             self._loop_opencv()
+            return   # clean exit (stop() was called)
         except Exception as exc:
             if self._running:
                 self._error = str(exc)
-                logger.error("CameraReader: OpenCV also failed: %s", exc)
+                logger.error("CameraReader: worker subprocess failed: %s", exc)
 
     # ── picamera2 backend ─────────────────────────────────────────────────
 
@@ -450,56 +453,90 @@ class CameraReader:
 
     def _loop_opencv(self):
         import cv2  # type: ignore
+        import numpy as np  # type: ignore
 
-        device = getattr(config, "CAMERA_DEVICE_INDEX", 0)
-        cap = cv2.VideoCapture(device)
-        if not cap.isOpened():
-            raise RuntimeError(
-                f"OpenCV: cannot open camera at index/path {device!r}"
-            )
+        worker_path = Path(__file__).resolve().parent.parent / "camera_worker.py"
+        if not worker_path.exists():
+            raise RuntimeError(f"Camera worker file not found: {worker_path}")
 
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH,  config.CAMERA_WIDTH)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config.CAMERA_HEIGHT)
-        cap.set(cv2.CAP_PROP_FPS,          config.CAMERA_FRAMERATE)
-        # Request camera-side auto-white-balance and auto-exposure
-        cap.set(cv2.CAP_PROP_AUTO_WB,          1)
-        cap.set(cv2.CAP_PROP_AUTO_EXPOSURE,    3)   # 3 = aperture priority (auto)
-        # Sharpness: 0=off, higher = sharper (range is driver-dependent)
-        sharpness = getattr(config, "CAMERA_SHARPNESS", 1.5)
-        cap.set(cv2.CAP_PROP_SHARPNESS, sharpness)
+        proc = subprocess.Popen(
+            ["/usr/bin/python3", str(worker_path)],
+            stdout=subprocess.PIPE,
+            cwd=str(worker_path.parent),
+            bufsize=0,
+        )
+        if proc.stdout is None:
+            proc.terminate()
+            raise RuntimeError("Camera worker started without stdout pipe")
 
-        self._backend = "opencv"
+        self._worker_proc = proc
+        self._backend = "worker_subprocess"
         self._error = None
         logger.info(
-            "CameraReader: OpenCV started (device=%r, %dx%d @ %d fps)",
-            device, config.CAMERA_WIDTH, config.CAMERA_HEIGHT, config.CAMERA_FRAMERATE,
+            "CameraReader: worker subprocess started (%s via /usr/bin/python3)",
+            worker_path,
         )
 
         rotation_map = {
-            90:  cv2.ROTATE_90_CLOCKWISE,
+            90: cv2.ROTATE_90_CLOCKWISE,
             180: cv2.ROTATE_180,
             270: cv2.ROTATE_90_COUNTERCLOCKWISE,
         }
         rotation = getattr(config, "CAMERA_ROTATION", 0)
         rotate_code = rotation_map.get(rotation)
 
-        interval = 1.0 / max(1, config.CAMERA_FRAMERATE)
+        def _read_exact(size: int) -> Optional[bytes]:
+            """Read exactly size bytes from worker stdout, or None on EOF."""
+            chunks = []
+            remaining = size
+            while remaining > 0:
+                chunk = proc.stdout.read(remaining)
+                if not chunk:
+                    return None
+                chunks.append(chunk)
+                remaining -= len(chunk)
+            return b"".join(chunks)
 
         try:
             while self._running:
-                ok, frame = cap.read()
-                if ok:
-                    if rotate_code is not None:
-                        frame = cv2.rotate(frame, rotate_code)
+                size_bytes = _read_exact(4)
+                if not size_bytes:
+                    break
 
-                    _, buf = cv2.imencode(
-                        ".jpg", frame,
+                size = struct.unpack(">I", size_bytes)[0]
+                if size <= 0 or size > 10_000_000:
+                    logger.warning("CameraReader: invalid frame size from worker: %d", size)
+                    continue
+
+                jpg = _read_exact(size)
+                if not jpg:
+                    break
+
+                jpeg_bytes = jpg
+                if rotate_code is not None:
+                    frame = cv2.imdecode(np.frombuffer(jpg, dtype=np.uint8), cv2.IMREAD_COLOR)
+                    if frame is None:
+                        continue
+                    frame = cv2.rotate(frame, rotate_code)
+                    ok, buf = cv2.imencode(
+                        ".jpg",
+                        frame,
                         [cv2.IMWRITE_JPEG_QUALITY, config.CAMERA_JPEG_QUALITY],
                     )
-                    with self._cond:
-                        self._frame = buf.tobytes()
-                        self._frame_seq += 1
-                        self._fps_timestamps.append(time.monotonic())
-                        self._cond.notify_all()
+                    if not ok:
+                        continue
+                    jpeg_bytes = buf.tobytes()
+
+                with self._cond:
+                    self._frame = jpeg_bytes
+                    self._frame_seq += 1
+                    self._fps_timestamps.append(time.monotonic())
+                    self._cond.notify_all()
         finally:
-            cap.release()
+            if proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=1.0)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+            self._worker_proc = None
