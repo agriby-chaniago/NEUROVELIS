@@ -26,11 +26,17 @@ try:
     import cv2  # type: ignore
 except Exception:  # pragma: no cover - optional runtime dependency handling
     cv2 = None
+    CV2_IMPORT_ERROR = "cv2 import failed"
+else:
+    CV2_IMPORT_ERROR = None
 
 try:
     import mediapipe as mp  # type: ignore
 except Exception:  # pragma: no cover - optional runtime dependency handling
     mp = None
+    MP_IMPORT_ERROR = "mediapipe import failed"
+else:
+    MP_IMPORT_ERROR = None
 
 if mp is not None:
     try:
@@ -88,7 +94,17 @@ class VisualFeatureExtractor:
 
         self._landmarker = None
         self._face_mesh = None
+        self._dependency_errors: list[str] = []
+        if cv2 is None:
+            self._dependency_errors.append("opencv-python-headless")
+        if mp is None:
+            self._dependency_errors.append("mediapipe")
+
         if not self._enabled_runtime:
+            if not self._enabled_cfg:
+                self._last_error = "DISABLED_BY_CONFIG"
+            elif self._dependency_errors:
+                self._last_error = f"DEPENDENCY_MISSING:{'|'.join(self._dependency_errors)}"
             return
 
         if self._init_face_landmarker_model(
@@ -180,6 +196,11 @@ class VisualFeatureExtractor:
             "last_error": self._last_error,
             "model_path": self._landmarker_model_path or None,
             "edge_count": len(self._tesselation_edges),
+            "cv2_available": cv2 is not None,
+            "mediapipe_available": mp is not None,
+            "dependency_errors": list(self._dependency_errors),
+            "cv2_import_error": CV2_IMPORT_ERROR,
+            "mediapipe_import_error": MP_IMPORT_ERROR,
         }
 
     def tesselation_edges(self) -> list[list[int]]:

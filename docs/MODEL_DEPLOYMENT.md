@@ -69,6 +69,12 @@ Install from `requirements.txt` on the target device:
 - Excessive label flicker: reduce `MODEL_SMOOTHING_ALPHA`.
 - Face not detected continuously: improve lighting/camera angle or reduce
   Face Mesh confidence thresholds slightly.
+- `visual.backend = disabled` in `/model/debug`:
+  - Ensure service runtime has `mediapipe` and `opencv-python-headless` installed.
+  - Ensure the `.task` file exists at `MODEL_FACE_LANDMARKER_MODEL_PATH` on the
+    same machine/path used by the running service.
+  - If using systemd, install dependencies in the exact Python environment from
+    `ExecStart` in your service unit.
 
 ## Data Logging
 
