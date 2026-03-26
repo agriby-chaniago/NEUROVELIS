@@ -5,8 +5,8 @@ import sys
 import config
 
 
-width = int(getattr(config, "CAMERA_WIDTH", 1280))
-height = int(getattr(config, "CAMERA_HEIGHT", 720))
+width = int(getattr(config, "CAMERA_STREAM_WIDTH", 640))
+height = int(getattr(config, "CAMERA_STREAM_HEIGHT", 360))
 fps = int(max(1, getattr(config, "CAMERA_FRAMERATE", 30)))
 frame_us = int(1_000_000 / fps)
 jpeg_quality = int(getattr(config, "CAMERA_JPEG_QUALITY", 80))
@@ -16,10 +16,20 @@ rotation = int(getattr(config, "CAMERA_ROTATION", 0))
 picam2 = Picamera2(int(getattr(config, "CAMERA_LIBCAMERA_INDEX", 0)))
 video_config = picam2.create_video_configuration(
     main={"size": (width, height), "format": "RGB888"},
-    controls={"FrameDurationLimits": (frame_us, frame_us)},
+    controls={
+        "FrameDurationLimits": (frame_us, frame_us),
+        "AwbEnable": True,
+        "AeEnable": True,
+    },
 )
 picam2.configure(video_config)
 picam2.start()
+
+# Some camera pipelines ignore FrameDurationLimits from initial config.
+try:
+    picam2.set_controls({"FrameDurationLimits": (frame_us, frame_us)})
+except Exception:
+    pass
 
 try:
     while True:

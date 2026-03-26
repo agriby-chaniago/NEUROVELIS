@@ -147,8 +147,13 @@ class ModelInferenceService:
 
     def _loop(self):
         interval = max(0.1, float(config.MODEL_INFERENCE_INTERVAL_S))
+        visual_interval = max(
+            0.05,
+            float(getattr(config, "MODEL_VISUAL_UPDATE_INTERVAL_S", 0.10)),
+        )
         timeout_ms = max(1, int(config.MODEL_INFERENCE_TIMEOUT_MS))
         min_points = max(3, int(config.MODEL_INFERENCE_MIN_POINTS))
+        next_inference_at = 0.0
 
         while not self._stop_event.is_set():
             start = time.monotonic()
@@ -160,60 +165,65 @@ class ModelInferenceService:
             if not isinstance(landmarks_norm, list):
                 landmarks_norm = []
 
+            mesh_timestamp_utc = datetime.now(timezone.utc).isoformat()
+            with self._lock:
+                self._mesh_latest = {
+                    "model_face_detected": face_detected,
+                    "model_face_landmarks": list(landmarks_norm),
+                    "model_face_backend": self._visual_extractor.health().get("backend"),
+                    "model_timestamp_utc": mesh_timestamp_utc,
+                }
+
             self._append_history(
                 sensor_data=sensor_data,
                 frame=frame,
                 visual_features=visual_features,
             )
-            feature_vector = self._build_feature_vector(min_points=min_points)
-            if feature_vector is not None:
+            if start >= next_inference_at:
+                feature_vector = self._build_feature_vector(min_points=min_points)
+                if feature_vector is not None:
+                    with self._lock:
+                        self._last_feature_vector = dict(feature_vector)
+                        self._last_feature_timestamp_utc = datetime.now(timezone.utc).isoformat()
+
+                try:
+                    result = self._adapter.predict(
+                        sensor_data=sensor_data,
+                        frame_bytes=frame,
+                        feature_vector=feature_vector,
+                    )
+                except NotImplementedError as exc:
+                    result = _unknown_payload(reason="BACKEND_NOT_IMPLEMENTED")
+                    logger.warning("Model backend not implemented: %s", exc)
+                except Exception as exc:
+                    result = _unknown_payload(reason="INFERENCE_ERROR")
+                    logger.error("Model inference error: %s", exc)
+
+                latency_ms = int((time.monotonic() - start) * 1000)
+                if latency_ms > timeout_ms:
+                    result = _unknown_payload(reason="INFERENCE_TIMEOUT")
+                    result["model_latency_ms"] = latency_ms
+                else:
+                    result["model_latency_ms"] = latency_ms
+
+                result = self._apply_smoothing(result)
+                result["model_face_detected"] = face_detected
+                result["model_face_landmarks"] = landmarks_norm
+                result["model_face_backend"] = self._visual_extractor.health().get("backend")
+
+                result["model_timestamp_utc"] = datetime.now(timezone.utc).isoformat()
+
                 with self._lock:
-                    self._last_feature_vector = dict(feature_vector)
-                    self._last_feature_timestamp_utc = datetime.now(timezone.utc).isoformat()
+                    self._latest = dict(result)
 
-            try:
-                result = self._adapter.predict(
-                    sensor_data=sensor_data,
-                    frame_bytes=frame,
-                    feature_vector=feature_vector,
-                )
-            except NotImplementedError as exc:
-                result = _unknown_payload(reason="BACKEND_NOT_IMPLEMENTED")
-                logger.warning("Model backend not implemented: %s", exc)
-            except Exception as exc:
-                result = _unknown_payload(reason="INFERENCE_ERROR")
-                logger.error("Model inference error: %s", exc)
-
-            latency_ms = int((time.monotonic() - start) * 1000)
-            if latency_ms > timeout_ms:
-                result = _unknown_payload(reason="INFERENCE_TIMEOUT")
-                result["model_latency_ms"] = latency_ms
-            else:
-                result["model_latency_ms"] = latency_ms
-
-            result = self._apply_smoothing(result)
-            result["model_face_detected"] = face_detected
-            result["model_face_landmarks"] = landmarks_norm
-            result["model_face_backend"] = self._visual_extractor.health().get("backend")
-
-            result["model_timestamp_utc"] = datetime.now(timezone.utc).isoformat()
-
-            with self._lock:
-                self._latest = dict(result)
-                self._mesh_latest = {
-                    "model_face_detected": face_detected,
-                    "model_face_landmarks": list(landmarks_norm),
-                    "model_face_backend": result.get("model_face_backend"),
-                    "model_timestamp_utc": result.get("model_timestamp_utc"),
-                }
-
-            # Publish inference into shared sensor snapshot for dashboard/SSE/CSV.
-            publish_result = dict(result)
-            publish_result.pop("model_face_landmarks", None)
-            self._sensor_manager.set_model_inference(publish_result)
+                # Publish inference into shared sensor snapshot for dashboard/SSE/CSV.
+                publish_result = dict(result)
+                publish_result.pop("model_face_landmarks", None)
+                self._sensor_manager.set_model_inference(publish_result)
+                next_inference_at = start + interval
 
             elapsed = time.monotonic() - start
-            self._stop_event.wait(timeout=max(0.0, interval - elapsed))
+            self._stop_event.wait(timeout=max(0.0, visual_interval - elapsed))
 
     def _apply_smoothing(self, result: dict) -> dict:
         """EMA smoothing on class probabilities to reduce UI flicker."""

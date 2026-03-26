@@ -231,6 +231,9 @@ ACTIVE_SENSORS = {
 MODEL_INFERENCE_ENABLED = True
 MODEL_INFERENCE_BACKEND = "sklearn_pickle"
 MODEL_INFERENCE_INTERVAL_S = 1.0
+# Visual feature extraction/mesh refresh cadence (independent from model inference).
+# Lower value = smoother face mesh overlay but more CPU usage.
+MODEL_VISUAL_UPDATE_INTERVAL_S = 0.10
 MODEL_INFERENCE_TIMEOUT_MS = 800
 MODEL_INFERENCE_MODEL_PATH = os.path.join(
     os.path.dirname(__file__), "model_inference", "artifacts", "model.joblib"
