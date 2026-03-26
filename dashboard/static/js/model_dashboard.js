@@ -109,6 +109,13 @@ function setText(id, value) {
   el.textContent = value;
 }
 
+function fmtNumber(value, digits = 1) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) {
+    return "-";
+  }
+  return Number(value).toFixed(digits);
+}
+
 function formatLabel(label) {
   if (!label) return "UNKNOWN";
   return String(label).toUpperCase();
@@ -140,16 +147,24 @@ function updateCards(data) {
   const confPct =
     conf !== null && conf !== undefined
       ? `${(Number(conf) * 100).toFixed(1)}`
-      : "—";
+      : "-";
   const latency =
     data.model_latency_ms !== null && data.model_latency_ms !== undefined
       ? String(data.model_latency_ms)
-      : "—";
+      : "-";
+
+  const hr = data.hr_valid === false ? "-" : fmtNumber(data.heart_rate_bpm, 0);
+  const spo2 =
+    data.spo2_valid === false ? "-" : fmtNumber(data.spo2_percent, 1);
+  const gsr = fmtNumber(data.gsr_conductance_us, 4);
 
   setText("val-top-class", topClass);
   setText("val-confidence", confPct);
+  setText("val-hr", hr);
+  setText("val-spo2", spo2);
+  setText("val-gsr", gsr);
   setText("val-latency", latency);
-  setText("val-reason", data.model_alert_reasons || "—");
+  setText("val-reason", data.model_alert_reasons || "-");
 }
 
 function updateCharts(data) {

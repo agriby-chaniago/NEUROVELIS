@@ -13,8 +13,9 @@ This document covers deployment for the realtime 4-class model dashboard.
 
 Place artifacts at:
 
-- `model_inference/artifacts/model.pkl`
-- `model_inference/artifacts/scaler.pkl`
+- `model_inference/artifacts/model.joblib`
+- `model_inference/artifacts/scaler.joblib`
+- `model_inference/artifacts/face_landmarker.task`
 
 ## Required Dependencies
 
@@ -22,6 +23,7 @@ Install from `requirements.txt` on the target device:
 
 - `scikit-learn`
 - `joblib`
+- `mediapipe` (for realtime Face Mesh visual features)
 - plus existing runtime packages (Flask, numpy, camera/sensor libs)
 
 ## Runtime Config
@@ -37,6 +39,12 @@ Install from `requirements.txt` on the target device:
 - `MODEL_ALERT_CONFIDENCE_THRESHOLD`
 - `MODEL_UNKNOWN_CONFIDENCE_THRESHOLD`
 - `MODEL_SMOOTHING_ALPHA`
+- `MODEL_FACE_MESH_ENABLED`
+- `MODEL_FACE_LANDMARKER_MODEL_PATH`
+- `MODEL_FACE_MESH_MIN_DETECTION_CONFIDENCE`
+- `MODEL_FACE_MESH_MIN_TRACKING_CONFIDENCE`
+- `MODEL_BLINK_EAR_THRESHOLD`
+- `MODEL_EDA_SCR_DIFF_THRESHOLD_US`
 
 ## Startup Validation
 
@@ -45,6 +53,7 @@ Install from `requirements.txt` on the target device:
 3. Open `/model/debug` and confirm:
    - adapter backend loaded
    - feature vector present
+   - visual extractor runtime enabled
    - no load error
 4. Open `/health` and check `model` section is healthy.
 
@@ -55,6 +64,8 @@ Install from `requirements.txt` on the target device:
 - `NO_FEATURE_VECTOR`: wait until enough points are collected (`MODEL_INFERENCE_MIN_POINTS`).
 - Frequent `NO_CAMERA` or `SENSOR_STALE`: verify hardware stream stability.
 - Excessive label flicker: reduce `MODEL_SMOOTHING_ALPHA`.
+- Face not detected continuously: improve lighting/camera angle or reduce
+  Face Mesh confidence thresholds slightly.
 
 ## Data Logging
 

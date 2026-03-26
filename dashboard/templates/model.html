@@ -8,14 +8,16 @@ font-size: 0.78rem; font-weight: 600; background: #fdecea; border: 1px solid
 #e8a09a; border-left: 4px solid var(--red); color: var(--red); flex-shrink: 0; }
 #model-alert.visible { display: flex; } .metric-card.pred .value { color:
 var(--accent); } .metric-card.conf .value { color: #1e7845; } .metric-card.state
-.value { color: #5e35b1; } .metric-card.lat .value { color: #c25d00; }
-.metric-card.signal .value { color: #0277bd; font-size: 1rem; }
-.metric-card.reason .value { color: #b71c1c; font-size: 0.84rem; overflow:
-hidden; text-overflow: ellipsis; white-space: nowrap; } .charts-grid {
-grid-template-columns: 1fr 1fr; } {% endblock %} {% block header_before_h1 %}
+.value { color: #5e35b1; } .metric-card.hr .value { color: #b71c1c; }
+.metric-card.spo2 .value { color: #1a5fad; } .metric-card.gsr .value { color:
+#0277bd; } .metric-card.lat .value { color: #c25d00; } .metric-card.signal
+.value { color: #0277bd; font-size: 1rem; } .metric-card.reason .value { color:
+#b71c1c; font-size: 0.84rem; overflow: hidden; text-overflow: ellipsis;
+white-space: nowrap; } .charts-grid { grid-template-columns: 1fr 1fr; } {%
+endblock %} {% block header_before_h1 %}
 <div id="status-dot"></div>
 {% endblock %} {% block header_after_h1 %}
-<span id="last-update">Waiting for model data…</span>
+<span id="last-update">Waiting for model data...</span>
 {% endblock %} {% block banners %}
 <div id="model-alert">
   <span>&#9888;</span>
@@ -27,7 +29,7 @@ grid-template-columns: 1fr 1fr; } {% endblock %} {% block header_before_h1 %}
     <div class="camera-card" id="camera-section">
       <h3>
         &#127909; Camera Feed
-        <span id="camera-status">Connecting…</span>
+        <span id="camera-status">Connecting...</span>
       </h3>
       <div class="camera-wrap">
         <img
@@ -37,7 +39,7 @@ grid-template-columns: 1fr 1fr; } {% endblock %} {% block header_before_h1 %}
           onerror="onCameraError()"
           onload="onCameraLoad()"
         />
-        <span id="camera-fps">— fps</span>
+        <span id="camera-fps">- fps</span>
       </div>
     </div>
   </div>
@@ -51,7 +53,7 @@ grid-template-columns: 1fr 1fr; } {% endblock %} {% block header_before_h1 %}
       </div>
       <div class="metric-card conf">
         <div class="label">Confidence</div>
-        <div class="value" id="val-confidence">—</div>
+        <div class="value" id="val-confidence">-</div>
         <div class="unit">%</div>
       </div>
       <div class="metric-card state">
@@ -59,9 +61,24 @@ grid-template-columns: 1fr 1fr; } {% endblock %} {% block header_before_h1 %}
         <div class="value" id="val-state">INIT</div>
         <div class="unit">service</div>
       </div>
+      <div class="metric-card hr">
+        <div class="label">Heart Rate</div>
+        <div class="value" id="val-hr">-</div>
+        <div class="unit">BPM</div>
+      </div>
+      <div class="metric-card spo2">
+        <div class="label">SpO2</div>
+        <div class="value" id="val-spo2">-</div>
+        <div class="unit">%</div>
+      </div>
+      <div class="metric-card gsr">
+        <div class="label">GSR / EDA</div>
+        <div class="value" id="val-gsr">-</div>
+        <div class="unit">uS</div>
+      </div>
       <div class="metric-card lat">
         <div class="label">Latency</div>
-        <div class="value" id="val-latency">—</div>
+        <div class="value" id="val-latency">-</div>
         <div class="unit">ms</div>
       </div>
       <div class="metric-card signal">
@@ -71,7 +88,7 @@ grid-template-columns: 1fr 1fr; } {% endblock %} {% block header_before_h1 %}
       </div>
       <div class="metric-card reason">
         <div class="label">Reason</div>
-        <div class="value" id="val-reason">—</div>
+        <div class="value" id="val-reason">-</div>
         <div class="unit">status</div>
       </div>
     </div>

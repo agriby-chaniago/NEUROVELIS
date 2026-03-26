@@ -16,6 +16,7 @@ Pillow>=10.0.0          # required for Arducam/picamera2 JPEG encoding
 # picamera2 is not listed here — install via apt on Raspberry Pi OS.
 # OpenCV fallback for USB Arducam (or when CSI camera not detected):
 opencv-python-headless>=4.9.0
+mediapipe>=0.10.14
 
 # ML inference runtime (for model_inference/artifacts/model.pkl + scaler.pkl)
 # IMPORTANT: If your model was trained with a specific scikit-learn version,

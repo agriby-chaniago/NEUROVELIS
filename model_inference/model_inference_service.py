@@ -11,6 +11,7 @@ from typing import Optional
 
 import config
 from model_inference.model_adapter import ModelAdapter, _unknown_payload
+from model_inference.visual_feature_extractor import VisualFeatureExtractor
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,20 @@ class ModelInferenceService:
         self._adapter = ModelAdapter(
             backend=config.MODEL_INFERENCE_BACKEND,
             model_path=config.MODEL_INFERENCE_MODEL_PATH,
+            scaler_path=config.MODEL_INFERENCE_SCALER_PATH,
+        )
+        self._visual_extractor = VisualFeatureExtractor(
+            enabled=getattr(config, "MODEL_FACE_MESH_ENABLED", True),
+            landmarker_model_path=getattr(
+                config, "MODEL_FACE_LANDMARKER_MODEL_PATH", ""
+            ),
+            min_detection_confidence=getattr(
+                config, "MODEL_FACE_MESH_MIN_DETECTION_CONFIDENCE", 0.5
+            ),
+            min_tracking_confidence=getattr(
+                config, "MODEL_FACE_MESH_MIN_TRACKING_CONFIDENCE", 0.5
+            ),
+            blink_ear_threshold=getattr(config, "MODEL_BLINK_EAR_THRESHOLD", 0.21),
         )
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
@@ -69,6 +84,7 @@ class ModelInferenceService:
         self._stop_event.set()
         if self._thread is not None:
             self._thread.join(timeout=5.0)
+        self._visual_extractor.close()
         logger.info("ModelInferenceService stopped")
 
     def get_latest(self) -> dict:
@@ -103,6 +119,7 @@ class ModelInferenceService:
             "feature_timestamp_utc": self._last_feature_timestamp_utc,
             "history_points": len(self._history),
             "adapter": self._adapter.health(),
+            "visual": self._visual_extractor.health(),
         }
 
     def _loop(self):
@@ -114,7 +131,12 @@ class ModelInferenceService:
             start = time.monotonic()
             sensor_data = self._sensor_manager.get_latest()
             frame = self._camera_reader.get_frame() if self._camera_reader is not None else None
-            self._append_history(sensor_data=sensor_data, frame=frame)
+            visual_features = self._visual_extractor.extract(frame)
+            self._append_history(
+                sensor_data=sensor_data,
+                frame=frame,
+                visual_features=visual_features,
+            )
             feature_vector = self._build_feature_vector(min_points=min_points)
             if feature_vector is not None:
                 with self._lock:
@@ -195,12 +217,32 @@ class ModelInferenceService:
             out["model_alert_reasons"] = ""
         return out
 
-    def _append_history(self, sensor_data: dict, frame: Optional[bytes]):
+    def _append_history(
+        self,
+        sensor_data: dict,
+        frame: Optional[bytes],
+        visual_features: Optional[dict[str, Optional[float]]] = None,
+    ):
         now = time.monotonic()
         hr = sensor_data.get("heart_rate_bpm")
         gsr = sensor_data.get("gsr_conductance_us")
+        spo2 = sensor_data.get("spo2_percent")
+        spo2_valid = bool(sensor_data.get("spo2_valid"))
         hr_val = float(hr) if hr is not None else None
         gsr_val = float(gsr) if gsr is not None else None
+        spo2_val = float(spo2) if (spo2 is not None and spo2_valid) else None
+
+        visual = visual_features or {}
+        ear_val = visual.get("ear")
+        mar_val = visual.get("mar")
+        motion_val = visual.get("motion")
+        blink_event = visual.get("blink_event")
+
+        ear_f = float(ear_val) if ear_val is not None else None
+        mar_f = float(mar_val) if mar_val is not None else None
+        motion_f = float(motion_val) if motion_val is not None else None
+        blink_f = float(blink_event) if blink_event is not None else 0.0
+
         frame_changed = 1.0 if (frame is not None and frame != self._prev_frame) else 0.0
         self._prev_frame = frame
 
@@ -209,6 +251,11 @@ class ModelInferenceService:
                 "t": now,
                 "hr": hr_val,
                 "gsr": gsr_val,
+                "spo2": spo2_val,
+                "ear": ear_f,
+                "mar": mar_f,
+                "motion": motion_f,
+                "blink_event": blink_f,
                 "frame_changed": frame_changed,
             }
         )
@@ -251,34 +298,99 @@ class ModelInferenceService:
 
         hr_values = [r["hr"] for r in rows if r["hr"] is not None]
         gsr_values = [r["gsr"] for r in rows if r["gsr"] is not None]
+        spo2_values = [r["spo2"] for r in rows if r["spo2"] is not None]
+        ear_values = [r["ear"] for r in rows if r["ear"] is not None]
+        mar_values = [r["mar"] for r in rows if r["mar"] is not None]
+        motion_values = [r["motion"] for r in rows if r["motion"] is not None]
+
         if len(hr_values) < min_points or len(gsr_values) < min_points:
             return None
+
+        visual_runtime_enabled = bool(
+            self._visual_extractor.health().get("enabled_runtime")
+        )
+
+        # Visual facemesh features require at least a small stable sample.
+        min_visual_points = max(3, min_points // 2)
+        if visual_runtime_enabled and (
+            len(ear_values) < min_visual_points
+            or len(mar_values) < min_visual_points
+            or len(motion_values) < min_visual_points
+        ):
+            return None
+
+        if not ear_values:
+            ear_values = [0.25 for _ in rows]
+        if not mar_values:
+            mar_values = [0.35 for _ in rows]
+        if not motion_values:
+            motion_values = [float(r.get("frame_changed", 0.0) or 0.0) for r in rows]
+
+        window_seconds = max(rows[-1]["t"] - rows[0]["t"], 1.0)
 
         hr_mean = self._mean(hr_values)
         hr_std = self._std(hr_values)
         hr_slope = self._slope(hr_values)
-        hr_delta = hr_values[-1] - hr_values[0]
         hr_range = max(hr_values) - min(hr_values)
+        hr_var_ratio = hr_std / (abs(hr_mean) + 1e-6)
 
         gsr_mean = self._mean(gsr_values)
         gsr_std = self._std(gsr_values)
         gsr_slope = self._slope(gsr_values)
-        gsr_delta = gsr_values[-1] - gsr_values[0]
         gsr_range = max(gsr_values) - min(gsr_values)
 
+        ear_mean = self._mean(ear_values)
+        ear_std = self._std(ear_values)
+        mar_mean = self._mean(mar_values)
+        mar_std = self._std(mar_values)
+        motion_mean = self._mean(motion_values)
+        motion_std = self._std(motion_values)
+
+        blink_count = sum(float(r.get("blink_event", 0.0) or 0.0) for r in rows)
+        blink_rate = (blink_count * 60.0) / window_seconds
+
+        gsr_diffs = [
+            gsr_values[idx] - gsr_values[idx - 1]
+            for idx in range(1, len(gsr_values))
+        ]
+        eda_phasic_mean = self._mean([abs(v) for v in gsr_diffs]) if gsr_diffs else 0.0
+        scr_threshold = float(getattr(config, "MODEL_EDA_SCR_DIFF_THRESHOLD_US", 0.03))
+        scr_amps = [v for v in gsr_diffs if v > scr_threshold]
+        scr_count = len(scr_amps)
+        scr_amp_max = max(scr_amps) if scr_amps else 0.0
+        scr_amp_mean = self._mean(scr_amps) if scr_amps else 0.0
+        scr_frequency = scr_count / window_seconds
+
         motion_rate = sum(r["frame_changed"] for r in rows) / len(rows)
-        motion_per_hr = motion_rate / (hr_mean + 1e-6)
+        motion_per_hr = motion_rate / (abs(hr_mean) + 1e-6)
+
+        spo2_mean = self._mean(spo2_values) if spo2_values else 0.0
 
         return {
+            # Feature set aligned with trained multimodal model.
+            "eda_tonic_mean": gsr_mean,
+            "eda_phasic_mean": eda_phasic_mean,
+            "scr_amp_max": scr_amp_max,
+            "scr_amp_mean": scr_amp_mean,
+            "scr_frequency": scr_frequency,
+            "scr_count": float(scr_count),
             "hr_mean": hr_mean,
             "hr_std": hr_std,
             "hr_slope": hr_slope,
-            "hr_delta": hr_delta,
             "hr_range": hr_range,
+            "hr_var_ratio": hr_var_ratio,
+            "ear_mean": ear_mean,
+            "ear_std": ear_std,
+            "mar_mean": mar_mean,
+            "mar_std": mar_std,
+            "motion_mean": motion_mean,
+            "motion_std": motion_std,
+            "blink_rate": blink_rate,
+            # Auxiliary diagnostics/fallback features.
             "gsr_mean": gsr_mean,
             "gsr_std": gsr_std,
             "gsr_slope": gsr_slope,
-            "gsr_delta": gsr_delta,
             "gsr_range": gsr_range,
+            "spo2_mean": spo2_mean,
             "motion_per_hr": motion_per_hr,
         }

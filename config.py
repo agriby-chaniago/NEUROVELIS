@@ -254,3 +254,18 @@ MODEL_UNKNOWN_CONFIDENCE_THRESHOLD = 0.50
 
 # EMA smoothing for class probabilities (0<alpha<=1). Lower = smoother.
 MODEL_SMOOTHING_ALPHA = 0.35
+
+# ─── Visual Feature Extraction (MediaPipe Face Mesh) ────────────────────
+# Enables full realtime facial dynamics extraction for model features
+# (EAR, MAR, blink rate, facial motion).
+MODEL_FACE_MESH_ENABLED = True
+MODEL_FACE_LANDMARKER_MODEL_PATH = os.path.join(
+    os.path.dirname(__file__), "model_inference", "artifacts", "face_landmarker.task"
+)
+MODEL_FACE_MESH_MIN_DETECTION_CONFIDENCE = 0.5
+MODEL_FACE_MESH_MIN_TRACKING_CONFIDENCE = 0.5
+MODEL_BLINK_EAR_THRESHOLD = 0.21
+
+# EDA phasic event threshold (microSiemens difference per sample) used for
+# SCR feature extraction: scr_count, scr_frequency, scr_amp_*.
+MODEL_EDA_SCR_DIFF_THRESHOLD_US = 0.03
