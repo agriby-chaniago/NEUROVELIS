@@ -303,8 +303,8 @@ MODEL_UNCERTAIN_MAX_ACC_GAP = 0.35
 # EMA smoothing for class probabilities (0<alpha<=1). Lower = smoother.
 MODEL_SMOOTHING_ALPHA = 0.30
 
-# Show prediction distribution on full 4 classes.
-MODEL_EXCLUDE_NORMAL_CLASS = False
+# Show prediction distribution on 3 target classes only (exclude normal).
+MODEL_EXCLUDE_NORMAL_CLASS = True
 
 # Expose independent per-class chance from raw model logits (not normalized
 # across classes), so each class can be interpreted on its own 0-100 scale.
@@ -312,14 +312,14 @@ MODEL_OUTPUT_INDEPENDENT_CHANCE = True
 
 # Temperature and bias for logit-to-chance conversion.
 # chance = sigmoid((logit - bias) / temperature)
-MODEL_CHANCE_LOGIT_TEMPERATURE = 1.6
-MODEL_CHANCE_LOGIT_BIAS = 0.15
+MODEL_CHANCE_LOGIT_TEMPERATURE = 1.9
+MODEL_CHANCE_LOGIT_BIAS = 0.25
 
 # Post-calibration compression for independent chance values.
 # final = clamp(0.5 + (raw - 0.5) * shrinkage, min, max)
-MODEL_CHANCE_SHRINKAGE = 0.70
-MODEL_CHANCE_MIN = 0.03
-MODEL_CHANCE_MAX = 0.92
+MODEL_CHANCE_SHRINKAGE = 0.60
+MODEL_CHANCE_MIN = 0.05
+MODEL_CHANCE_MAX = 0.88
 
 # ─── Visual Feature Extraction (MediaPipe Face Mesh) ────────────────────
 # Enables full realtime facial dynamics extraction for model features

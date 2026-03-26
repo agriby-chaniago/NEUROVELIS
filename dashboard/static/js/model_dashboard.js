@@ -2,7 +2,7 @@
 
 const MAX_POINTS = 60;
 const RECONNECT_MS = 3000;
-const CLASS_ORDER = ["normal", "anxiety", "stress", "depression"];
+const CLASS_ORDER = ["anxiety", "stress", "depression"];
 
 Chart.defaults.color = "#52697e";
 Chart.defaults.borderColor = "#d0d9e4";
@@ -11,7 +11,9 @@ Chart.defaults.font.family =
 Chart.defaults.font.size = 11;
 
 const labels = [];
-const confidenceBuf = [];
+const anxietyTrendBuf = [];
+const stressTrendBuf = [];
+const depressionTrendBuf = [];
 
 function pushLabel(ts) {
   const d = ts ? new Date(ts) : new Date();
@@ -33,13 +35,13 @@ function pushVal(buf, val) {
 const probChart = new Chart(document.getElementById("chart-prob"), {
   type: "bar",
   data: {
-    labels: ["Normal", "Anxiety", "Stress", "Depression"],
+    labels: ["Anxiety", "Stress", "Depression"],
     datasets: [
       {
         label: "Chance",
-        data: [0, 0, 0, 0],
-        backgroundColor: ["#4c6b2f", "#1a5fad", "#c25d00", "#b71c1c"],
-        borderColor: ["#4c6b2f", "#1a5fad", "#c25d00", "#b71c1c"],
+        data: [0, 0, 0],
+        backgroundColor: ["#1a5fad", "#c25d00", "#b71c1c"],
+        borderColor: ["#1a5fad", "#c25d00", "#b71c1c"],
         borderWidth: 1,
       },
     ],
@@ -69,10 +71,30 @@ const confChart = new Chart(document.getElementById("chart-conf"), {
     labels,
     datasets: [
       {
-        label: "Top-1 Confidence",
-        data: confidenceBuf,
-        borderColor: "#1e7845",
-        backgroundColor: "#1e784522",
+        label: "Anxiety",
+        data: anxietyTrendBuf,
+        borderColor: "#1a5fad",
+        backgroundColor: "#1a5fad22",
+        borderWidth: 1.5,
+        pointRadius: 0,
+        tension: 0.3,
+        fill: false,
+      },
+      {
+        label: "Stress",
+        data: stressTrendBuf,
+        borderColor: "#c25d00",
+        backgroundColor: "#c25d0022",
+        borderWidth: 1.5,
+        pointRadius: 0,
+        tension: 0.3,
+        fill: false,
+      },
+      {
+        label: "Depression",
+        data: depressionTrendBuf,
+        borderColor: "#b71c1c",
+        backgroundColor: "#b71c1c22",
         borderWidth: 1.5,
         pointRadius: 0,
         tension: 0.3,
@@ -84,7 +106,7 @@ const confChart = new Chart(document.getElementById("chart-conf"), {
     animation: false,
     responsive: true,
     maintainAspectRatio: false,
-    plugins: { legend: { display: false } },
+    plugins: { legend: { display: true, position: "bottom" } },
     scales: {
       y: {
         min: 0,
@@ -377,7 +399,6 @@ function formatLabel(label) {
 
 function getTopChance(data) {
   const chances = {
-    normal: Number(data.model_chance_normal ?? data.model_probs_normal ?? NaN),
     anxiety: Number(
       data.model_chance_anxiety ?? data.model_probs_anxiety ?? NaN,
     ),
@@ -463,7 +484,6 @@ function updateCards(data) {
 
 function updateCharts(data) {
   const probs = [
-    Number(data.model_chance_normal ?? data.model_probs_normal ?? 0),
     Number(data.model_chance_anxiety ?? data.model_probs_anxiety ?? 0),
     Number(data.model_chance_stress ?? data.model_probs_stress ?? 0),
     Number(data.model_chance_depression ?? data.model_probs_depression ?? 0),
@@ -472,11 +492,9 @@ function updateCharts(data) {
   probChart.update();
 
   pushLabel(data.model_timestamp_utc || data.timestamp_utc);
-  const conf = getTopChance(data);
-  pushVal(
-    confidenceBuf,
-    conf !== null && conf !== undefined ? Number(conf) : null,
-  );
+  pushVal(anxietyTrendBuf, probs[0]);
+  pushVal(stressTrendBuf, probs[1]);
+  pushVal(depressionTrendBuf, probs[2]);
   confChart.update();
 }
 
