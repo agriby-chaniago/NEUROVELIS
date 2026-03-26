@@ -317,13 +317,17 @@ class ModelInferenceService:
 
     def _apply_smoothing(self, result: dict) -> dict:
         """EMA smoothing on class probabilities to reduce UI flicker."""
+        exclude_normal = bool(getattr(config, "MODEL_EXCLUDE_NORMAL_CLASS", False))
+        active_classes = ["anxiety", "stress", "depression"] if exclude_normal else [
+            "normal", "anxiety", "stress", "depression"
+        ]
         probs = {
-            "normal": float(result.get("model_probs_normal", 0.0) or 0.0),
+            "normal": 0.0 if exclude_normal else float(result.get("model_probs_normal", 0.0) or 0.0),
             "anxiety": float(result.get("model_probs_anxiety", 0.0) or 0.0),
             "stress": float(result.get("model_probs_stress", 0.0) or 0.0),
             "depression": float(result.get("model_probs_depression", 0.0) or 0.0),
         }
-        total = sum(probs.values())
+        total = sum(probs[k] for k in active_classes)
         if total <= 0.0 or result.get("model_label_top1") == "unknown":
             self._smoothed_probs = None
             return result
@@ -335,9 +339,20 @@ class ModelInferenceService:
             for k in self._smoothed_probs:
                 self._smoothed_probs[k] = alpha * probs[k] + (1.0 - alpha) * self._smoothed_probs[k]
 
-        smooth_total = sum(self._smoothed_probs.values()) or 1.0
-        normalized = {k: v / smooth_total for k, v in self._smoothed_probs.items()}
-        label_top1 = max(normalized, key=lambda k: normalized[k])
+        if exclude_normal:
+            self._smoothed_probs["normal"] = 0.0
+
+        smooth_total = sum(self._smoothed_probs[k] for k in active_classes) or 1.0
+        normalized = {
+            "normal": 0.0,
+            "anxiety": self._smoothed_probs["anxiety"] / smooth_total,
+            "stress": self._smoothed_probs["stress"] / smooth_total,
+            "depression": self._smoothed_probs["depression"] / smooth_total,
+        }
+        if not exclude_normal:
+            normalized["normal"] = self._smoothed_probs["normal"] / smooth_total
+
+        label_top1 = max(active_classes, key=lambda k: normalized[k])
         conf_top1 = normalized[label_top1]
 
         out = dict(result)

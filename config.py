@@ -278,13 +278,8 @@ MODEL_UNKNOWN_CONFIDENCE_THRESHOLD = 0.50
 # EMA smoothing for class probabilities (0<alpha<=1). Lower = smoother.
 MODEL_SMOOTHING_ALPHA = 0.35
 
-# Probability shaping to avoid overly peaked one-hot outputs in realtime UI.
-# temperature >1.0 flattens distribution while preserving ranking.
-MODEL_PROBABILITY_TEMPERATURE = 1.35
-# Small blend with uniform distribution so all classes keep non-zero visibility.
-MODEL_PROBABILITY_UNIFORM_MIX = 0.04
-# Minimum probability floor applied before renormalization.
-MODEL_PROBABILITY_FLOOR = 1e-5
+# Show prediction distribution on 3 target classes only (exclude normal).
+MODEL_EXCLUDE_NORMAL_CLASS = True
 
 # ─── Visual Feature Extraction (MediaPipe Face Mesh) ────────────────────
 # Enables full realtime facial dynamics extraction for model features

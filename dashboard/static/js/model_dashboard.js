@@ -2,7 +2,7 @@
 
 const MAX_POINTS = 60;
 const RECONNECT_MS = 3000;
-const CLASS_ORDER = ["normal", "anxiety", "stress", "depression"];
+const CLASS_ORDER = ["anxiety", "stress", "depression"];
 
 Chart.defaults.color = "#52697e";
 Chart.defaults.borderColor = "#d0d9e4";
@@ -33,13 +33,13 @@ function pushVal(buf, val) {
 const probChart = new Chart(document.getElementById("chart-prob"), {
   type: "bar",
   data: {
-    labels: ["Normal", "Anxiety", "Stress", "Depression"],
+    labels: ["Anxiety", "Stress", "Depression"],
     datasets: [
       {
         label: "Probability",
-        data: [0, 0, 0, 0],
-        backgroundColor: ["#1e7845", "#1a5fad", "#c25d00", "#b71c1c"],
-        borderColor: ["#1e7845", "#1a5fad", "#c25d00", "#b71c1c"],
+        data: [0, 0, 0],
+        backgroundColor: ["#1a5fad", "#c25d00", "#b71c1c"],
+        borderColor: ["#1a5fad", "#c25d00", "#b71c1c"],
         borderWidth: 1,
       },
     ],
@@ -423,7 +423,6 @@ function updateCards(data) {
 
 function updateCharts(data) {
   const probs = [
-    Number(data.model_probs_normal || 0),
     Number(data.model_probs_anxiety || 0),
     Number(data.model_probs_stress || 0),
     Number(data.model_probs_depression || 0),

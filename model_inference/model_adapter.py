@@ -32,10 +32,7 @@ def _softmax(scores: dict[str, float]) -> dict[str, float]:
 
 
 def _stabilize_class_probs(probs: dict[str, float]) -> dict[str, float]:
-    """Stabilize class probabilities to avoid degenerate one-hot outputs.
-
-    This keeps ranking intact while making percentages more informative for UI.
-    """
+    """Normalize probabilities and optionally exclude normal class."""
     classes = list(config.MODEL_CLASSES)
     safe = {k: max(0.0, float(probs.get(k, 0.0))) for k in classes}
     total = sum(safe.values())
@@ -45,25 +42,22 @@ def _stabilize_class_probs(probs: dict[str, float]) -> dict[str, float]:
 
     safe = {k: v / total for k, v in safe.items()}
 
-    floor = max(0.0, float(getattr(config, "MODEL_PROBABILITY_FLOOR", 0.0)))
-    if floor > 0.0:
-        safe = {k: max(floor, v) for k, v in safe.items()}
-        total = sum(safe.values())
-        safe = {k: v / total for k, v in safe.items()}
-
-    temperature = max(1.0, float(getattr(config, "MODEL_PROBABILITY_TEMPERATURE", 1.0)))
-    if temperature > 1.0:
-        power = 1.0 / temperature
-        safe = {k: (v ** power) for k, v in safe.items()}
-        total = sum(safe.values())
-        safe = {k: v / total for k, v in safe.items()}
-
-    mix = max(0.0, min(0.5, float(getattr(config, "MODEL_PROBABILITY_UNIFORM_MIX", 0.0))))
-    if mix > 0.0:
-        uniform = 1.0 / max(len(classes), 1)
-        safe = {k: ((1.0 - mix) * v + mix * uniform) for k, v in safe.items()}
-        total = sum(safe.values())
-        safe = {k: v / total for k, v in safe.items()}
+    if bool(getattr(config, "MODEL_EXCLUDE_NORMAL_CLASS", False)):
+        focus_classes = ["anxiety", "stress", "depression"]
+        focus_total = sum(safe.get(k, 0.0) for k in focus_classes)
+        if focus_total <= 0.0:
+            return {
+                "normal": 0.0,
+                "anxiety": 0.0,
+                "stress": 0.0,
+                "depression": 0.0,
+            }
+        return {
+            "normal": 0.0,
+            "anxiety": safe.get("anxiety", 0.0) / focus_total,
+            "stress": safe.get("stress", 0.0) / focus_total,
+            "depression": safe.get("depression", 0.0) / focus_total,
+        }
 
     return safe
 
