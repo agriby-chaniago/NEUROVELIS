@@ -192,6 +192,9 @@ CAMERA_BRIGHTNESS    = 0.2
 # False untuk fixed-focus (adjust lensa ring secara manual).
 CAMERA_AUTOFOCUS     = True
 
+# Mirror horizontal untuk preview/dashboard (selfie view).
+CAMERA_MIRROR_HORIZONTAL = True
+
 # R↔B channel swap.
 # OV64A40 (Arducam 64MP) via PiSP backend mengirim data BGR meskipun format
 # yang diminta RGB888 — ini bug/quirk driver libcamera + PiSP.
@@ -275,4 +278,4 @@ MODEL_EDA_SCR_DIFF_THRESHOLD_US = 0.03
 
 # Mesh overlay stream interval for /model/mesh_stream (seconds).
 # Keep this separate from dashboard SSE interval to avoid camera lag.
-MODEL_MESH_STREAM_INTERVAL_S = 0.15
+MODEL_MESH_STREAM_INTERVAL_S = 0.08

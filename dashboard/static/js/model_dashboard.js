@@ -105,6 +105,7 @@ const footerTs = document.getElementById("footer-ts");
 const cameraFeed = document.getElementById("camera-feed");
 const meshCanvas = document.getElementById("face-mesh-overlay");
 const meshCtx = meshCanvas ? meshCanvas.getContext("2d") : null;
+const meshStatus = document.getElementById("mesh-status");
 
 const MESH_STYLE = {
   smoothingAlpha: 0.35,
@@ -171,6 +172,20 @@ function clearMeshOverlay() {
   syncMeshCanvasSize();
   meshCtx.clearRect(0, 0, meshDisplayWidth, meshDisplayHeight);
   previousProjected = null;
+}
+
+function updateMeshStatus(data) {
+  if (!meshStatus) return;
+  const backend = String(data?.model_face_backend || "unknown");
+  const hasFace = !!data?.model_face_detected;
+
+  if (hasFace) {
+    meshStatus.textContent = `FaceMesh: active (${backend})`;
+    meshStatus.className = "mesh-status active";
+  } else {
+    meshStatus.textContent = `FaceMesh: no-face (${backend})`;
+    meshStatus.className = "mesh-status idle";
+  }
 }
 
 function projectLandmarks(landmarks) {
@@ -451,9 +466,14 @@ function connectMeshStream() {
       return;
     }
     drawFaceMesh(data.model_face_landmarks);
+    updateMeshStatus(data);
   };
 
   es.onerror = () => {
+    if (meshStatus) {
+      meshStatus.textContent = "FaceMesh: stream disconnected";
+      meshStatus.className = "mesh-status error";
+    }
     es.close();
     clearMeshOverlay();
     setTimeout(connectMeshStream, RECONNECT_MS);

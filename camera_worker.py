@@ -12,6 +12,10 @@ frame_us = int(1_000_000 / fps)
 jpeg_quality = int(getattr(config, "CAMERA_JPEG_QUALITY", 80))
 swap_rb = bool(getattr(config, "CAMERA_SWAP_RB", False))
 rotation = int(getattr(config, "CAMERA_ROTATION", 0))
+autofocus = bool(getattr(config, "CAMERA_AUTOFOCUS", False))
+sharpness = float(getattr(config, "CAMERA_SHARPNESS", 1.0))
+brightness = float(getattr(config, "CAMERA_BRIGHTNESS", 0.0))
+mirror_horizontal = bool(getattr(config, "CAMERA_MIRROR_HORIZONTAL", True))
 
 picam2 = Picamera2(int(getattr(config, "CAMERA_LIBCAMERA_INDEX", 0)))
 video_config = picam2.create_video_configuration(
@@ -20,6 +24,8 @@ video_config = picam2.create_video_configuration(
         "FrameDurationLimits": (frame_us, frame_us),
         "AwbEnable": True,
         "AeEnable": True,
+        "Sharpness": sharpness,
+        "Brightness": brightness,
     },
 )
 picam2.configure(video_config)
@@ -30,6 +36,13 @@ try:
     picam2.set_controls({"FrameDurationLimits": (frame_us, frame_us)})
 except Exception:
     pass
+
+if autofocus:
+    try:
+        # Arducam 64MP AF: 2 = continuous autofocus, 1 = normal AF speed.
+        picam2.set_controls({"AfMode": 2, "AfSpeed": 1})
+    except Exception:
+        pass
 
 try:
     while True:
@@ -44,6 +57,9 @@ try:
             frame = cv2.rotate(frame, cv2.ROTATE_180)
         elif rotation == 270:
             frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+
+        if mirror_horizontal:
+            frame = cv2.flip(frame, 1)
 
         ok, jpg = cv2.imencode(
             ".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), jpeg_quality]
