@@ -107,7 +107,7 @@ const meshCanvas = document.getElementById("face-mesh-overlay");
 const meshCtx = meshCanvas ? meshCanvas.getContext("2d") : null;
 
 const MESH_STYLE = {
-  smoothingAlpha: 0.45,
+  smoothingAlpha: 0.72,
   boxColor: "255, 48, 48",
   boxAlpha: 0.95,
   boxWidth: 2.2,
@@ -180,11 +180,47 @@ function clearMeshOverlay() {
   previousProjected = null;
 }
 
+function getCoverProjection() {
+  const srcWidth = Number(cameraFeed?.naturalWidth || 0);
+  const srcHeight = Number(cameraFeed?.naturalHeight || 0);
+
+  if (
+    srcWidth <= 0 ||
+    srcHeight <= 0 ||
+    meshDisplayWidth <= 0 ||
+    meshDisplayHeight <= 0
+  ) {
+    return {
+      offsetX: 0,
+      offsetY: 0,
+      drawWidth: meshDisplayWidth,
+      drawHeight: meshDisplayHeight,
+    };
+  }
+
+  // Match CSS object-fit: cover geometry used by #camera-feed.
+  const scale = Math.max(
+    meshDisplayWidth / srcWidth,
+    meshDisplayHeight / srcHeight,
+  );
+  const drawWidth = srcWidth * scale;
+  const drawHeight = srcHeight * scale;
+
+  return {
+    offsetX: (meshDisplayWidth - drawWidth) / 2,
+    offsetY: (meshDisplayHeight - drawHeight) / 2,
+    drawWidth,
+    drawHeight,
+  };
+}
+
 function projectLandmarks(landmarks) {
+  const projection = getCoverProjection();
+
   return landmarks.map((point) => {
     if (!Array.isArray(point) || point.length < 2) return null;
-    const x = Number(point[0]) * meshDisplayWidth;
-    const y = Number(point[1]) * meshDisplayHeight;
+    const x = projection.offsetX + Number(point[0]) * projection.drawWidth;
+    const y = projection.offsetY + Number(point[1]) * projection.drawHeight;
     if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
     return [x, y];
   });
