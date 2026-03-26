@@ -105,41 +105,172 @@ const footerTs = document.getElementById("footer-ts");
 const cameraFeed = document.getElementById("camera-feed");
 const meshCanvas = document.getElementById("face-mesh-overlay");
 const meshCtx = meshCanvas ? meshCanvas.getContext("2d") : null;
+
+const MESH_STYLE = {
+  smoothingAlpha: 0.35,
+  edgeColor: "44, 171, 255",
+  edgeAlpha: 0.33,
+  edgeWidth: 0.8,
+  contourColor: "255, 214, 102",
+  contourAlpha: 0.88,
+  contourWidth: 1.7,
+  pointColor: "255, 255, 255",
+  pointAlpha: 0.55,
+  pointRadius: 1.05,
+  pointStep: 6,
+};
+
+const FACE_OVAL = [
+  10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288,
+  397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136,
+  172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109, 10,
+];
+const LEFT_EYE_RING = [
+  33, 246, 161, 160, 159, 158, 157, 173, 133, 155, 154, 153,
+  145, 144, 163, 7, 33,
+];
+const RIGHT_EYE_RING = [
+  263, 466, 388, 387, 386, 385, 384, 398, 362, 382, 381, 380,
+  374, 373, 390, 249, 263,
+];
+const OUTER_LIPS = [
+  61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291, 308,
+  324, 318, 402, 317, 14, 87, 178, 88, 95, 78, 61,
+];
+
 let meshEdges = [];
+let previousProjected = null;
+let meshDisplayWidth = 0;
+let meshDisplayHeight = 0;
 
 function syncMeshCanvasSize() {
   if (!meshCanvas || !cameraFeed) return;
-  const width = cameraFeed.clientWidth;
-  const height = cameraFeed.clientHeight;
+  const width = Math.floor(cameraFeed.clientWidth);
+  const height = Math.floor(cameraFeed.clientHeight);
   if (width <= 0 || height <= 0) return;
-  if (meshCanvas.width !== width || meshCanvas.height !== height) {
-    meshCanvas.width = width;
-    meshCanvas.height = height;
+
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  const pixelWidth = Math.floor(width * dpr);
+  const pixelHeight = Math.floor(height * dpr);
+
+  meshDisplayWidth = width;
+  meshDisplayHeight = height;
+
+  if (meshCanvas.width !== pixelWidth || meshCanvas.height !== pixelHeight) {
+    meshCanvas.width = pixelWidth;
+    meshCanvas.height = pixelHeight;
+    if (meshCtx) {
+      // Draw in CSS pixels while preserving high-DPI sharpness.
+      meshCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
   }
 }
 
 function clearMeshOverlay() {
   if (!meshCanvas || !meshCtx) return;
   syncMeshCanvasSize();
-  meshCtx.clearRect(0, 0, meshCanvas.width, meshCanvas.height);
+  meshCtx.clearRect(0, 0, meshDisplayWidth, meshDisplayHeight);
+  previousProjected = null;
+}
+
+function projectLandmarks(landmarks) {
+  return landmarks.map((point) => {
+    if (!Array.isArray(point) || point.length < 2) return null;
+    const x = Number(point[0]) * meshDisplayWidth;
+    const y = Number(point[1]) * meshDisplayHeight;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    return [x, y];
+  });
+}
+
+function smoothProjected(projected) {
+  if (!Array.isArray(projected) || projected.length === 0) return projected;
+  if (!Array.isArray(previousProjected) || previousProjected.length !== projected.length) {
+    previousProjected = projected;
+    return projected;
+  }
+
+  const alpha = MESH_STYLE.smoothingAlpha;
+  const smoothed = projected.map((curr, idx) => {
+    const prev = previousProjected[idx];
+    if (!curr || !prev) return curr;
+    const x = prev[0] + (curr[0] - prev[0]) * alpha;
+    const y = prev[1] + (curr[1] - prev[1]) * alpha;
+    return [x, y];
+  });
+  previousProjected = smoothed;
+  return smoothed;
+}
+
+function drawContourPath(projected, indices) {
+  if (!meshCtx || !Array.isArray(indices) || indices.length < 2) return;
+  let hasAnyPoint = false;
+  meshCtx.beginPath();
+  for (let i = 0; i < indices.length; i += 1) {
+    const p = projected[indices[i]];
+    if (!p) continue;
+    if (!hasAnyPoint) {
+      meshCtx.moveTo(p[0], p[1]);
+      hasAnyPoint = true;
+    } else {
+      meshCtx.lineTo(p[0], p[1]);
+    }
+  }
+  if (hasAnyPoint) {
+    meshCtx.stroke();
+  }
+}
+
+function drawFaceAura(projected) {
+  if (!meshCtx) return;
+  const anchorA = projected[10];
+  const anchorB = projected[152];
+  if (!anchorA || !anchorB) return;
+
+  const cx = (anchorA[0] + anchorB[0]) / 2;
+  const cy = (anchorA[1] + anchorB[1]) / 2;
+  const radius = Math.hypot(anchorA[0] - anchorB[0], anchorA[1] - anchorB[1]) * 0.72;
+  if (!Number.isFinite(radius) || radius <= 0) return;
+
+  const aura = meshCtx.createRadialGradient(cx, cy, radius * 0.15, cx, cy, radius);
+  aura.addColorStop(0.0, "rgba(44, 171, 255, 0.16)");
+  aura.addColorStop(0.5, "rgba(44, 171, 255, 0.08)");
+  aura.addColorStop(1.0, "rgba(44, 171, 255, 0.00)");
+
+  meshCtx.globalCompositeOperation = "lighter";
+  meshCtx.fillStyle = aura;
+  meshCtx.beginPath();
+  meshCtx.arc(cx, cy, radius, 0, Math.PI * 2);
+  meshCtx.fill();
+  meshCtx.globalCompositeOperation = "source-over";
+}
+
+function drawMeshPoints(projected) {
+  if (!meshCtx) return;
+  meshCtx.fillStyle = `rgba(${MESH_STYLE.pointColor}, ${MESH_STYLE.pointAlpha})`;
+  for (let i = 0; i < projected.length; i += MESH_STYLE.pointStep) {
+    const p = projected[i];
+    if (!p) continue;
+    meshCtx.beginPath();
+    meshCtx.arc(p[0], p[1], MESH_STYLE.pointRadius, 0, Math.PI * 2);
+    meshCtx.fill();
+  }
 }
 
 function drawFaceMesh(landmarks) {
   if (!meshCanvas || !meshCtx) return;
   syncMeshCanvasSize();
-  meshCtx.clearRect(0, 0, meshCanvas.width, meshCanvas.height);
+  meshCtx.clearRect(0, 0, meshDisplayWidth, meshDisplayHeight);
   if (!Array.isArray(landmarks) || landmarks.length === 0) return;
 
-  const projected = landmarks.map((point) => {
-    if (!Array.isArray(point) || point.length < 2) return null;
-    const x = Number(point[0]) * meshCanvas.width;
-    const y = Number(point[1]) * meshCanvas.height;
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-    return [x, y];
-  });
+  const projected = smoothProjected(projectLandmarks(landmarks));
 
-  meshCtx.strokeStyle = "rgba(26, 95, 173, 0.55)";
-  meshCtx.lineWidth = 0.8;
+  drawFaceAura(projected);
+
+  meshCtx.strokeStyle = `rgba(${MESH_STYLE.edgeColor}, ${MESH_STYLE.edgeAlpha})`;
+  meshCtx.lineWidth = MESH_STYLE.edgeWidth;
+  meshCtx.shadowColor = "rgba(26, 109, 168, 0.32)";
+  meshCtx.shadowBlur = 3;
   meshCtx.beginPath();
 
   for (const edge of meshEdges) {
@@ -152,6 +283,16 @@ function drawFaceMesh(landmarks) {
   }
 
   meshCtx.stroke();
+  meshCtx.shadowBlur = 0;
+
+  meshCtx.strokeStyle = `rgba(${MESH_STYLE.contourColor}, ${MESH_STYLE.contourAlpha})`;
+  meshCtx.lineWidth = MESH_STYLE.contourWidth;
+  drawContourPath(projected, FACE_OVAL);
+  drawContourPath(projected, LEFT_EYE_RING);
+  drawContourPath(projected, RIGHT_EYE_RING);
+  drawContourPath(projected, OUTER_LIPS);
+
+  drawMeshPoints(projected);
 }
 
 async function loadMeshTopology() {
