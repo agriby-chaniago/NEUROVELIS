@@ -121,21 +121,21 @@ const MESH_STYLE = {
 };
 
 const FACE_OVAL = [
-  10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288,
-  397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136,
-  172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109, 10,
+  10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378,
+  400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21,
+  54, 103, 67, 109, 10,
 ];
 const LEFT_EYE_RING = [
-  33, 246, 161, 160, 159, 158, 157, 173, 133, 155, 154, 153,
-  145, 144, 163, 7, 33,
+  33, 246, 161, 160, 159, 158, 157, 173, 133, 155, 154, 153, 145, 144, 163, 7,
+  33,
 ];
 const RIGHT_EYE_RING = [
-  263, 466, 388, 387, 386, 385, 384, 398, 362, 382, 381, 380,
-  374, 373, 390, 249, 263,
+  263, 466, 388, 387, 386, 385, 384, 398, 362, 382, 381, 380, 374, 373, 390,
+  249, 263,
 ];
 const OUTER_LIPS = [
-  61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291, 308,
-  324, 318, 402, 317, 14, 87, 178, 88, 95, 78, 61,
+  61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291, 308, 324, 318, 402, 317,
+  14, 87, 178, 88, 95, 78, 61,
 ];
 
 let meshEdges = [];
@@ -185,7 +185,10 @@ function projectLandmarks(landmarks) {
 
 function smoothProjected(projected) {
   if (!Array.isArray(projected) || projected.length === 0) return projected;
-  if (!Array.isArray(previousProjected) || previousProjected.length !== projected.length) {
+  if (
+    !Array.isArray(previousProjected) ||
+    previousProjected.length !== projected.length
+  ) {
     previousProjected = projected;
     return projected;
   }
@@ -229,10 +232,18 @@ function drawFaceAura(projected) {
 
   const cx = (anchorA[0] + anchorB[0]) / 2;
   const cy = (anchorA[1] + anchorB[1]) / 2;
-  const radius = Math.hypot(anchorA[0] - anchorB[0], anchorA[1] - anchorB[1]) * 0.72;
+  const radius =
+    Math.hypot(anchorA[0] - anchorB[0], anchorA[1] - anchorB[1]) * 0.72;
   if (!Number.isFinite(radius) || radius <= 0) return;
 
-  const aura = meshCtx.createRadialGradient(cx, cy, radius * 0.15, cx, cy, radius);
+  const aura = meshCtx.createRadialGradient(
+    cx,
+    cy,
+    radius * 0.15,
+    cx,
+    cy,
+    radius,
+  );
   aura.addColorStop(0.0, "rgba(44, 171, 255, 0.16)");
   aura.addColorStop(0.5, "rgba(44, 171, 255, 0.08)");
   aura.addColorStop(1.0, "rgba(44, 171, 255, 0.00)");
