@@ -14,23 +14,15 @@ var(--accent); } .metric-card.conf .value { color: #1e7845; } .metric-card.state
 .value { color: #0277bd; font-size: 1rem; } .metric-card.reason .value { color:
 #b71c1c; font-size: 0.84rem; overflow: hidden; text-overflow: ellipsis;
 white-space: nowrap; } #face-mesh-overlay { position: absolute; inset: 0; width:
-100%; height: 100%; pointer-events: none; z-index: 2; mix-blend-mode: screen;
-filter: drop-shadow(0 0 2px rgba(44, 171, 255, 0.4)); } #camera-fps { z-index:
-3; backdrop-filter: blur(3px); border: 1px solid rgba(255, 255, 255, 0.2);
-box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25); } .camera-wrap::after { content: "";
-position: absolute; inset: 0; pointer-events: none; z-index: 1; background:
-radial-gradient(circle at 50% 45%, rgba(20, 132, 200, 0.08) 0%, rgba(20, 132,
-200, 0) 52%), linear-gradient(180deg, rgba(9, 28, 41, 0.05) 0%, rgba(9, 28, 41,
-0) 35%, rgba(9, 28, 41, 0.08) 100%); } #mesh-status { margin-bottom: 0.35rem;
-font-size: 0.64rem; font-weight: 700; letter-spacing: 0.04em; text-transform:
-uppercase; border-radius: 4px; padding: 0.18rem 0.45rem; width: fit-content;
-border: 1px solid var(--border); color: var(--muted); background: #f4f8fb; }
-#mesh-status.active { color: #0b7d4a; border-color: rgba(11, 125, 74, 0.35);
-background: rgba(18, 163, 97, 0.12); } #mesh-status.idle { color: #9a6b00;
-border-color: rgba(154, 107, 0, 0.35); background: rgba(250, 193, 62, 0.14); }
-#mesh-status.error { color: #b71c1c; border-color: rgba(183, 28, 28, 0.35);
-background: rgba(255, 92, 92, 0.12); } .charts-grid { grid-template-columns: 1fr
-1fr; } {% endblock %} {% block header_before_h1 %}
+100%; height: 100%; pointer-events: none; z-index: 2; mix-blend-mode: normal;
+filter: none; } #camera-fps { z-index: 3; backdrop-filter: blur(3px); border:
+1px solid rgba(255, 255, 255, 0.2); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25); }
+.camera-wrap::after { content: ""; position: absolute; inset: 0; pointer-events:
+none; z-index: 1; background: radial-gradient(circle at 50% 45%, rgba(20, 132,
+200, 0.08) 0%, rgba(20, 132, 200, 0) 52%), linear-gradient(180deg, rgba(9, 28,
+41, 0.05) 0%, rgba(9, 28, 41, 0) 35%, rgba(9, 28, 41, 0.08) 100%); }
+.charts-grid { grid-template-columns: 1fr 1fr; } {% endblock %} {% block
+header_before_h1 %}
 <div id="status-dot"></div>
 {% endblock %} {% block header_after_h1 %}
 <span id="last-update">Waiting for model data...</span>
@@ -47,7 +39,6 @@ background: rgba(255, 92, 92, 0.12); } .charts-grid { grid-template-columns: 1fr
         &#127909; Camera Feed
         <span id="camera-status">Connecting...</span>
       </h3>
-      <div id="mesh-status" class="mesh-status idle">FaceMesh: waiting...</div>
       <div class="camera-wrap">
         <img
           id="camera-feed"

@@ -105,20 +105,18 @@ const footerTs = document.getElementById("footer-ts");
 const cameraFeed = document.getElementById("camera-feed");
 const meshCanvas = document.getElementById("face-mesh-overlay");
 const meshCtx = meshCanvas ? meshCanvas.getContext("2d") : null;
-const meshStatus = document.getElementById("mesh-status");
 
 const MESH_STYLE = {
-  smoothingAlpha: 0.35,
-  edgeColor: "44, 171, 255",
-  edgeAlpha: 0.33,
-  edgeWidth: 0.8,
-  contourColor: "255, 214, 102",
-  contourAlpha: 0.88,
-  contourWidth: 1.7,
-  pointColor: "255, 255, 255",
-  pointAlpha: 0.55,
-  pointRadius: 1.05,
-  pointStep: 6,
+  smoothingAlpha: 0.45,
+  boxColor: "255, 48, 48",
+  boxAlpha: 0.95,
+  boxWidth: 2.2,
+  contourColor: "87, 255, 87",
+  contourAlpha: 0.96,
+  contourWidth: 1.4,
+  pointColor: "255, 48, 48",
+  pointAlpha: 0.88,
+  pointRadius: 1.35,
 };
 
 const FACE_OVAL = [
@@ -138,6 +136,14 @@ const OUTER_LIPS = [
   61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291, 308, 324, 318, 402, 317,
   14, 87, 178, 88, 95, 78, 61,
 ];
+const INNER_LIPS = [
+  78, 191, 80, 81, 82, 13, 312, 311, 310, 415, 308, 324, 318, 402, 317, 14, 87,
+  178, 88, 95, 78,
+];
+const LEFT_BROW = [70, 63, 105, 66, 107, 55, 65, 52, 53, 46];
+const RIGHT_BROW = [336, 296, 334, 293, 300, 285, 295, 282, 283, 276];
+const NOSE_BRIDGE = [168, 6, 197, 195, 5, 4, 1, 19, 94, 2];
+const NOSE_BASE = [98, 97, 2, 326, 327];
 
 let meshEdges = [];
 let previousProjected = null;
@@ -172,20 +178,6 @@ function clearMeshOverlay() {
   syncMeshCanvasSize();
   meshCtx.clearRect(0, 0, meshDisplayWidth, meshDisplayHeight);
   previousProjected = null;
-}
-
-function updateMeshStatus(data) {
-  if (!meshStatus) return;
-  const backend = String(data?.model_face_backend || "unknown");
-  const hasFace = !!data?.model_face_detected;
-
-  if (hasFace) {
-    meshStatus.textContent = `FaceMesh: active (${backend})`;
-    meshStatus.className = "mesh-status active";
-  } else {
-    meshStatus.textContent = `FaceMesh: no-face (${backend})`;
-    meshStatus.className = "mesh-status idle";
-  }
 }
 
 function projectLandmarks(landmarks) {
@@ -239,42 +231,51 @@ function drawContourPath(projected, indices) {
   }
 }
 
-function drawFaceAura(projected) {
+function drawRotatedBoundingBox(projected) {
   if (!meshCtx) return;
-  const anchorA = projected[10];
-  const anchorB = projected[152];
-  if (!anchorA || !anchorB) return;
+  const left = projected[234];
+  const right = projected[454];
+  const forehead = projected[10];
+  const chin = projected[152];
+  if (!left || !right || !forehead || !chin) return;
 
-  const cx = (anchorA[0] + anchorB[0]) / 2;
-  const cy = (anchorA[1] + anchorB[1]) / 2;
-  const radius =
-    Math.hypot(anchorA[0] - anchorB[0], anchorA[1] - anchorB[1]) * 0.72;
-  if (!Number.isFinite(radius) || radius <= 0) return;
+  const cx = (left[0] + right[0] + forehead[0] + chin[0]) / 4;
+  const cy = (left[1] + right[1] + forehead[1] + chin[1]) / 4;
 
-  const aura = meshCtx.createRadialGradient(
-    cx,
-    cy,
-    radius * 0.15,
-    cx,
-    cy,
-    radius,
-  );
-  aura.addColorStop(0.0, "rgba(44, 171, 255, 0.16)");
-  aura.addColorStop(0.5, "rgba(44, 171, 255, 0.08)");
-  aura.addColorStop(1.0, "rgba(44, 171, 255, 0.00)");
+  const faceWidth = Math.hypot(right[0] - left[0], right[1] - left[1]);
+  const faceHeight = Math.hypot(chin[0] - forehead[0], chin[1] - forehead[1]);
+  if (!Number.isFinite(faceWidth) || !Number.isFinite(faceHeight)) return;
 
-  meshCtx.globalCompositeOperation = "lighter";
-  meshCtx.fillStyle = aura;
+  const boxWidth = faceWidth * 1.55;
+  const boxHeight = faceHeight * 1.55;
+  const angle = Math.atan2(right[1] - left[1], right[0] - left[0]);
+  const cosA = Math.cos(angle);
+  const sinA = Math.sin(angle);
+  const hw = boxWidth / 2;
+  const hh = boxHeight / 2;
+
+  const corners = [
+    [-hw, -hh],
+    [hw, -hh],
+    [hw, hh],
+    [-hw, hh],
+  ].map(([x, y]) => [cx + x * cosA - y * sinA, cy + x * sinA + y * cosA]);
+
+  meshCtx.strokeStyle = `rgba(${MESH_STYLE.boxColor}, ${MESH_STYLE.boxAlpha})`;
+  meshCtx.lineWidth = MESH_STYLE.boxWidth;
   meshCtx.beginPath();
-  meshCtx.arc(cx, cy, radius, 0, Math.PI * 2);
-  meshCtx.fill();
-  meshCtx.globalCompositeOperation = "source-over";
+  meshCtx.moveTo(corners[0][0], corners[0][1]);
+  meshCtx.lineTo(corners[1][0], corners[1][1]);
+  meshCtx.lineTo(corners[2][0], corners[2][1]);
+  meshCtx.lineTo(corners[3][0], corners[3][1]);
+  meshCtx.closePath();
+  meshCtx.stroke();
 }
 
 function drawMeshPoints(projected) {
   if (!meshCtx) return;
   meshCtx.fillStyle = `rgba(${MESH_STYLE.pointColor}, ${MESH_STYLE.pointAlpha})`;
-  for (let i = 0; i < projected.length; i += MESH_STYLE.pointStep) {
+  for (let i = 0; i < projected.length; i += 1) {
     const p = projected[i];
     if (!p) continue;
     meshCtx.beginPath();
@@ -290,26 +291,7 @@ function drawFaceMesh(landmarks) {
   if (!Array.isArray(landmarks) || landmarks.length === 0) return;
 
   const projected = smoothProjected(projectLandmarks(landmarks));
-
-  drawFaceAura(projected);
-
-  meshCtx.strokeStyle = `rgba(${MESH_STYLE.edgeColor}, ${MESH_STYLE.edgeAlpha})`;
-  meshCtx.lineWidth = MESH_STYLE.edgeWidth;
-  meshCtx.shadowColor = "rgba(26, 109, 168, 0.32)";
-  meshCtx.shadowBlur = 3;
-  meshCtx.beginPath();
-
-  for (const edge of meshEdges) {
-    if (!Array.isArray(edge) || edge.length < 2) continue;
-    const a = projected[edge[0]];
-    const b = projected[edge[1]];
-    if (!a || !b) continue;
-    meshCtx.moveTo(a[0], a[1]);
-    meshCtx.lineTo(b[0], b[1]);
-  }
-
-  meshCtx.stroke();
-  meshCtx.shadowBlur = 0;
+  drawRotatedBoundingBox(projected);
 
   meshCtx.strokeStyle = `rgba(${MESH_STYLE.contourColor}, ${MESH_STYLE.contourAlpha})`;
   meshCtx.lineWidth = MESH_STYLE.contourWidth;
@@ -317,6 +299,11 @@ function drawFaceMesh(landmarks) {
   drawContourPath(projected, LEFT_EYE_RING);
   drawContourPath(projected, RIGHT_EYE_RING);
   drawContourPath(projected, OUTER_LIPS);
+  drawContourPath(projected, INNER_LIPS);
+  drawContourPath(projected, LEFT_BROW);
+  drawContourPath(projected, RIGHT_BROW);
+  drawContourPath(projected, NOSE_BRIDGE);
+  drawContourPath(projected, NOSE_BASE);
 
   drawMeshPoints(projected);
 }
@@ -466,14 +453,9 @@ function connectMeshStream() {
       return;
     }
     drawFaceMesh(data.model_face_landmarks);
-    updateMeshStatus(data);
   };
 
   es.onerror = () => {
-    if (meshStatus) {
-      meshStatus.textContent = "FaceMesh: stream disconnected";
-      meshStatus.className = "mesh-status error";
-    }
     es.close();
     clearMeshOverlay();
     setTimeout(connectMeshStream, RECONNECT_MS);
