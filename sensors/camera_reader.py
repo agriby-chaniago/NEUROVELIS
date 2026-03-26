@@ -452,9 +452,6 @@ class CameraReader:
     # ── OpenCV backend ────────────────────────────────────────────────────
 
     def _loop_opencv(self):
-        import cv2  # type: ignore
-        import numpy as np  # type: ignore
-
         worker_path = Path(__file__).resolve().parent.parent / "camera_worker.py"
         if not worker_path.exists():
             raise RuntimeError(f"Camera worker file not found: {worker_path}")
@@ -476,14 +473,6 @@ class CameraReader:
             "CameraReader: worker subprocess started (%s via /usr/bin/python3)",
             worker_path,
         )
-
-        rotation_map = {
-            90: cv2.ROTATE_90_CLOCKWISE,
-            180: cv2.ROTATE_180,
-            270: cv2.ROTATE_90_COUNTERCLOCKWISE,
-        }
-        rotation = getattr(config, "CAMERA_ROTATION", 0)
-        rotate_code = rotation_map.get(rotation)
 
         def _read_exact(size: int) -> Optional[bytes]:
             """Read exactly size bytes from worker stdout, or None on EOF."""
@@ -512,23 +501,8 @@ class CameraReader:
                 if not jpg:
                     break
 
-                jpeg_bytes = jpg
-                if rotate_code is not None:
-                    frame = cv2.imdecode(np.frombuffer(jpg, dtype=np.uint8), cv2.IMREAD_COLOR)
-                    if frame is None:
-                        continue
-                    frame = cv2.rotate(frame, rotate_code)
-                    ok, buf = cv2.imencode(
-                        ".jpg",
-                        frame,
-                        [cv2.IMWRITE_JPEG_QUALITY, config.CAMERA_JPEG_QUALITY],
-                    )
-                    if not ok:
-                        continue
-                    jpeg_bytes = buf.tobytes()
-
                 with self._cond:
-                    self._frame = jpeg_bytes
+                    self._frame = jpg
                     self._frame_seq += 1
                     self._fps_timestamps.append(time.monotonic())
                     self._cond.notify_all()
