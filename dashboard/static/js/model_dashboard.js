@@ -132,16 +132,15 @@ const RIGHT_EYE_RING = [
   263, 466, 388, 387, 386, 385, 384, 398, 362, 382, 381, 380, 374, 373, 390,
   249, 263,
 ];
-const OUTER_LIPS = [
-  61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291, 308, 324, 318, 402, 317,
-  14, 87, 178, 88, 95, 78, 61,
-];
-const INNER_LIPS = [
-  78, 191, 80, 81, 82, 13, 312, 311, 310, 415, 308, 324, 318, 402, 317, 14, 87,
-  178, 88, 95, 78,
-];
-const LEFT_BROW = [70, 63, 105, 66, 107, 55, 65, 52, 53, 46];
-const RIGHT_BROW = [336, 296, 334, 293, 300, 285, 295, 282, 283, 276];
+const UPPER_LIP_OUTER = [61, 185, 40, 39, 37, 0, 267, 269, 270, 409, 291];
+const UPPER_LIP_INNER = [78, 191, 80, 81, 82, 13, 312, 311, 310, 415, 308];
+const LOWER_LIP_OUTER = [61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291];
+const LOWER_LIP_INNER = [78, 95, 88, 178, 87, 14, 317, 402, 318, 324, 308];
+
+const LEFT_BROW_UPPER = [70, 63, 105, 66, 107];
+const LEFT_BROW_LOWER = [46, 53, 52, 65, 55];
+const RIGHT_BROW_UPPER = [336, 296, 334, 293, 300];
+const RIGHT_BROW_LOWER = [276, 283, 282, 295, 285];
 const NOSE_BRIDGE = [168, 6, 197, 195, 5, 4, 1, 19, 94, 2];
 const NOSE_BASE = [98, 97, 2, 326, 327];
 
@@ -334,10 +333,14 @@ function drawFaceMesh(landmarks) {
   drawContourPath(projected, FACE_OVAL);
   drawContourPath(projected, LEFT_EYE_RING);
   drawContourPath(projected, RIGHT_EYE_RING);
-  drawContourPath(projected, OUTER_LIPS);
-  drawContourPath(projected, INNER_LIPS);
-  drawContourPath(projected, LEFT_BROW);
-  drawContourPath(projected, RIGHT_BROW);
+  drawContourPath(projected, UPPER_LIP_OUTER);
+  drawContourPath(projected, UPPER_LIP_INNER);
+  drawContourPath(projected, LOWER_LIP_OUTER);
+  drawContourPath(projected, LOWER_LIP_INNER);
+  drawContourPath(projected, LEFT_BROW_UPPER);
+  drawContourPath(projected, LEFT_BROW_LOWER);
+  drawContourPath(projected, RIGHT_BROW_UPPER);
+  drawContourPath(projected, RIGHT_BROW_LOWER);
   drawContourPath(projected, NOSE_BRIDGE);
   drawContourPath(projected, NOSE_BASE);
 
