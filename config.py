@@ -247,6 +247,15 @@ MODEL_INFERENCE_SCALER_PATH = os.path.join(
     os.path.dirname(__file__), "model_inference", "artifacts", "scaler.joblib"
 )
 MODEL_INFERENCE_MIN_POINTS = 8
+# Feature extraction window for model input (seconds).
+MODEL_FEATURE_WINDOW_S = 30.0
+# Fallback sampling rate used by EDA decomposition when runtime estimation is unstable.
+MODEL_SENSOR_SAMPLING_RATE_HZ = 10.0
+# Keep runtime feature extraction aligned with training notebook default (10 Hz).
+MODEL_USE_FIXED_SENSOR_SAMPLING_RATE = True
+# Training notebook filtered spo2_valid rows before sensor feature extraction.
+# Keep this False by default in deployment to avoid over-dropping realtime windows.
+MODEL_REQUIRE_SPO2_VALID_FOR_FEATURE_WINDOW = False
 
 # Final class order for the dashboard and API responses.
 MODEL_CLASSES = ["normal", "anxiety", "stress", "depression"]

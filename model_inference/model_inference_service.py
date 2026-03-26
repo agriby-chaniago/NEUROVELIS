@@ -9,9 +9,16 @@ import time
 from datetime import datetime, timezone
 from typing import Optional
 
+import numpy as np
+
 import config
 from model_inference.model_adapter import ModelAdapter, _unknown_payload
 from model_inference.visual_feature_extractor import VisualFeatureExtractor
+
+try:
+    import neurokit2 as nk  # type: ignore
+except Exception:  # pragma: no cover - optional runtime dependency
+    nk = None
 
 logger = logging.getLogger(__name__)
 
@@ -278,10 +285,11 @@ class ModelInferenceService:
     ):
         now = time.monotonic()
         hr = sensor_data.get("heart_rate_bpm")
+        hr_valid = bool(sensor_data.get("hr_valid"))
         gsr = sensor_data.get("gsr_conductance_us")
         spo2 = sensor_data.get("spo2_percent")
         spo2_valid = bool(sensor_data.get("spo2_valid"))
-        hr_val = float(hr) if hr is not None else None
+        hr_val = float(hr) if (hr is not None and hr_valid) else None
         gsr_val = float(gsr) if gsr is not None else None
         spo2_val = float(spo2) if (spo2 is not None and spo2_valid) else None
 
@@ -303,8 +311,10 @@ class ModelInferenceService:
             {
                 "t": now,
                 "hr": hr_val,
+                "hr_valid": hr_valid,
                 "gsr": gsr_val,
                 "spo2": spo2_val,
+                "spo2_valid": spo2_valid,
                 "ear": ear_f,
                 "mar": mar_f,
                 "motion": motion_f,
@@ -344,30 +354,152 @@ class ModelInferenceService:
             den += dx * dx
         return num / den if den > 0 else 0.0
 
+    @staticmethod
+    def _smooth_hr_signal(hr_signal: list[float], window: int = 15) -> list[float]:
+        """Apply rolling median smoothing to HR, matching training preprocessing."""
+        if not hr_signal:
+            return []
+        arr = np.asarray(hr_signal, dtype=float)
+        w = max(1, int(window))
+        half = w // 2
+        out = np.empty_like(arr)
+        for i in range(arr.size):
+            left = max(0, i - half)
+            right = min(arr.size, i + half + 1)
+            out[i] = float(np.median(arr[left:right]))
+        return out.tolist()
+
+    @staticmethod
+    def _moving_average(signal: list[float], window_size: int) -> list[float]:
+        if not signal:
+            return []
+        arr = np.asarray(signal, dtype=float)
+        w = max(1, int(window_size))
+        if w == 1:
+            return arr.tolist()
+        pad = w // 2
+        padded = np.pad(arr, (pad, pad), mode="edge")
+        kernel = np.ones(w, dtype=float) / float(w)
+        smooth = np.convolve(padded, kernel, mode="valid")
+        if smooth.size > arr.size:
+            smooth = smooth[: arr.size]
+        return smooth.tolist()
+
+    @staticmethod
+    def _estimate_sampling_rate(rows: list[dict]) -> float:
+        if len(rows) < 2:
+            return float(getattr(config, "MODEL_SENSOR_SAMPLING_RATE_HZ", 10.0))
+        elapsed = max(float(rows[-1]["t"] - rows[0]["t"]), 1e-6)
+        estimated = (len(rows) - 1) / elapsed
+        return max(1.0, float(estimated))
+
+    def _eda_decomposition(self, gsr_signal: list[float], sampling_rate: float) -> tuple[list[float], list[float]]:
+        """Decompose EDA into tonic and phasic components."""
+        if nk is not None:
+            try:
+                signals, _ = nk.eda_process(
+                    np.asarray(gsr_signal, dtype=float),
+                    sampling_rate=float(sampling_rate),
+                )
+                tonic = np.asarray(signals["EDA_Tonic"], dtype=float)
+                phasic = np.asarray(signals["EDA_Phasic"], dtype=float)
+                return tonic.tolist(), phasic.tolist()
+            except Exception as exc:
+                logger.debug("ModelInferenceService: neurokit2 eda_process fallback: %s", exc)
+
+        tonic_window = max(3, int(round(float(sampling_rate) * 4.0)))
+        tonic = np.asarray(self._moving_average(gsr_signal, tonic_window), dtype=float)
+        raw = np.asarray(gsr_signal, dtype=float)
+        phasic = raw - tonic
+        return tonic.tolist(), phasic.tolist()
+
+    def _extract_scr_features(self, phasic_signal: list[float], sampling_rate: float) -> dict[str, float]:
+        """Extract SCR count/amplitude/frequency from EDA phasic signal."""
+        if nk is not None:
+            try:
+                signals, _ = nk.eda_peaks(
+                    np.asarray(phasic_signal, dtype=float),
+                    sampling_rate=float(sampling_rate),
+                )
+                scr_peaks = np.asarray(signals["SCR_Peaks"], dtype=float)
+                scr_amplitude = np.asarray(signals["SCR_Amplitude"], dtype=float)
+                peak_indices = np.where(scr_peaks == 1)[0]
+                scr_count = int(peak_indices.size)
+
+                if scr_count > 0:
+                    amps = scr_amplitude[peak_indices]
+                    scr_amp_mean = float(np.nanmean(amps))
+                    scr_amp_max = float(np.nanmax(amps))
+                else:
+                    scr_amp_mean = 0.0
+                    scr_amp_max = 0.0
+
+                duration_sec = max(len(phasic_signal) / float(max(sampling_rate, 1.0)), 1e-6)
+                scr_frequency = float(scr_count / duration_sec)
+
+                return {
+                    "scr_count": float(scr_count),
+                    "scr_amp_mean": float(scr_amp_mean),
+                    "scr_amp_max": float(scr_amp_max),
+                    "scr_frequency": float(scr_frequency),
+                }
+            except Exception as exc:
+                logger.debug("ModelInferenceService: neurokit2 eda_peaks fallback: %s", exc)
+
+        phasic_arr = np.asarray(phasic_signal, dtype=float)
+        if phasic_arr.size < 2:
+            return {
+                "scr_count": 0.0,
+                "scr_amp_mean": 0.0,
+                "scr_amp_max": 0.0,
+                "scr_frequency": 0.0,
+            }
+
+        diffs = np.diff(phasic_arr)
+        threshold = float(getattr(config, "MODEL_EDA_SCR_DIFF_THRESHOLD_US", 0.03))
+        amps = diffs[diffs > threshold]
+        scr_count = int(amps.size)
+        scr_amp_mean = float(np.mean(amps)) if amps.size > 0 else 0.0
+        scr_amp_max = float(np.max(amps)) if amps.size > 0 else 0.0
+        duration_sec = max(phasic_arr.size / float(max(sampling_rate, 1.0)), 1e-6)
+        scr_frequency = float(scr_count / duration_sec)
+
+        return {
+            "scr_count": float(scr_count),
+            "scr_amp_mean": float(scr_amp_mean),
+            "scr_amp_max": float(scr_amp_max),
+            "scr_frequency": float(scr_frequency),
+        }
+
     def _build_feature_vector(self, min_points: int) -> Optional[dict[str, float]]:
         rows = list(self._history)
         if len(rows) < min_points:
             return None
 
-        # Use only the freshest tail window for strict realtime validity checks.
-        recent_rows = rows[-min_points:]
+        window_seconds_cfg = max(5.0, float(getattr(config, "MODEL_FEATURE_WINDOW_S", 30.0)))
+        t_latest = float(rows[-1]["t"])
+        recent_rows = [r for r in rows if (t_latest - float(r["t"])) <= window_seconds_cfg]
+        if len(recent_rows) < min_points:
+            return None
 
-        hr_values = [r["hr"] for r in rows if r["hr"] is not None]
-        gsr_values = [r["gsr"] for r in rows if r["gsr"] is not None]
-        spo2_values = [r["spo2"] for r in rows if r["spo2"] is not None]
-        ear_values = [r["ear"] for r in rows if r["ear"] is not None]
-        mar_values = [r["mar"] for r in rows if r["mar"] is not None]
-        motion_values = [r["motion"] for r in rows if r["motion"] is not None]
+        # Match training pipeline semantics: keep rows with valid HR for feature windows.
+        recent_rows = [r for r in recent_rows if bool(r.get("hr_valid"))]
+        if len(recent_rows) < min_points:
+            return None
 
-        recent_hr_values = [r["hr"] for r in recent_rows if r["hr"] is not None]
-        recent_gsr_values = [r["gsr"] for r in recent_rows if r["gsr"] is not None]
-        recent_ear_values = [r["ear"] for r in recent_rows if r["ear"] is not None]
-        recent_mar_values = [r["mar"] for r in recent_rows if r["mar"] is not None]
-        recent_motion_values = [r["motion"] for r in recent_rows if r["motion"] is not None]
+        if bool(getattr(config, "MODEL_REQUIRE_SPO2_VALID_FOR_FEATURE_WINDOW", False)):
+            recent_rows = [r for r in recent_rows if bool(r.get("spo2_valid"))]
+            if len(recent_rows) < min_points:
+                return None
+
+        hr_values = [float(r["hr"]) for r in recent_rows if r["hr"] is not None]
+        gsr_values = [float(r["gsr"]) for r in recent_rows if r["gsr"] is not None]
+        spo2_values = [float(r["spo2"]) for r in recent_rows if r["spo2"] is not None]
+        ear_values = [float(r["ear"]) for r in recent_rows if r["ear"] is not None]
+        mar_values = [float(r["mar"]) for r in recent_rows if r["mar"] is not None]
+        motion_values = [float(r["motion"]) for r in recent_rows if r["motion"] is not None]
 
         if len(hr_values) < min_points or len(gsr_values) < min_points:
-            return None
-        if len(recent_hr_values) < min_points or len(recent_gsr_values) < min_points:
             return None
 
         visual_runtime_enabled = bool(
@@ -384,14 +516,24 @@ class ModelInferenceService:
             or len(motion_values) < min_visual_points
         ):
             return None
-        if (
-            len(recent_ear_values) < min_visual_points
-            or len(recent_mar_values) < min_visual_points
-            or len(recent_motion_values) < min_visual_points
-        ):
+
+        if len(hr_values) < 5 or len(gsr_values) < 5:
             return None
 
-        window_seconds = max(rows[-1]["t"] - rows[0]["t"], 1.0)
+        if bool(getattr(config, "MODEL_USE_FIXED_SENSOR_SAMPLING_RATE", True)):
+            sampling_rate = max(
+                1.0,
+                float(getattr(config, "MODEL_SENSOR_SAMPLING_RATE_HZ", 10.0)),
+            )
+        else:
+            sampling_rate = self._estimate_sampling_rate(recent_rows)
+        hr_values = self._smooth_hr_signal(hr_values, window=15)
+        tonic_values, phasic_values = self._eda_decomposition(gsr_values, sampling_rate=sampling_rate)
+        if not tonic_values or not phasic_values:
+            return None
+        scr = self._extract_scr_features(phasic_values, sampling_rate=sampling_rate)
+
+        window_seconds = max(float(recent_rows[-1]["t"] - recent_rows[0]["t"]), 1.0)
 
         hr_mean = self._mean(hr_values)
         hr_std = self._std(hr_values)
@@ -411,34 +553,29 @@ class ModelInferenceService:
         motion_mean = self._mean(motion_values)
         motion_std = self._std(motion_values)
 
-        blink_count = sum(float(r.get("blink_event", 0.0) or 0.0) for r in rows)
+        blink_count = sum(float(r.get("blink_event", 0.0) or 0.0) for r in recent_rows)
         blink_rate = (blink_count * 60.0) / window_seconds
 
-        gsr_diffs = [
-            gsr_values[idx] - gsr_values[idx - 1]
-            for idx in range(1, len(gsr_values))
-        ]
-        eda_phasic_mean = self._mean([abs(v) for v in gsr_diffs]) if gsr_diffs else 0.0
-        scr_threshold = float(getattr(config, "MODEL_EDA_SCR_DIFF_THRESHOLD_US", 0.03))
-        scr_amps = [v for v in gsr_diffs if v > scr_threshold]
-        scr_count = len(scr_amps)
-        scr_amp_max = max(scr_amps) if scr_amps else 0.0
-        scr_amp_mean = self._mean(scr_amps) if scr_amps else 0.0
-        scr_frequency = scr_count / window_seconds
+        eda_tonic_mean = self._mean(tonic_values)
+        eda_phasic_mean = self._mean(phasic_values)
+        scr_count = float(scr.get("scr_count", 0.0))
+        scr_amp_max = float(scr.get("scr_amp_max", 0.0))
+        scr_amp_mean = float(scr.get("scr_amp_mean", 0.0))
+        scr_frequency = float(scr.get("scr_frequency", 0.0))
 
-        motion_rate = sum(r["frame_changed"] for r in rows) / len(rows)
+        motion_rate = sum(float(r["frame_changed"]) for r in recent_rows) / len(recent_rows)
         motion_per_hr = motion_rate / (abs(hr_mean) + 1e-6)
 
         spo2_mean = self._mean(spo2_values) if spo2_values else 0.0
 
         return {
             # Feature set aligned with trained multimodal model.
-            "eda_tonic_mean": gsr_mean,
+            "eda_tonic_mean": eda_tonic_mean,
             "eda_phasic_mean": eda_phasic_mean,
             "scr_amp_max": scr_amp_max,
             "scr_amp_mean": scr_amp_mean,
             "scr_frequency": scr_frequency,
-            "scr_count": float(scr_count),
+            "scr_count": scr_count,
             "hr_mean": hr_mean,
             "hr_std": hr_std,
             "hr_slope": hr_slope,
