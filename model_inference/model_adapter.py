@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import math
 import pickle
+import joblib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -105,8 +106,8 @@ class ModelAdapter:
             return
 
         try:
-            self._model = pickle.loads(model_path.read_bytes())
-            self._scaler = pickle.loads(scaler_path.read_bytes())
+            self._model = joblib.load(model_path)
+            self._scaler = joblib.load(scaler_path)
             self._classes = [str(c) for c in getattr(self._model, "classes_", config.MODEL_CLASSES)]
             self._feature_names = [
                 str(f) for f in getattr(self._scaler, "feature_names_in_", [])
