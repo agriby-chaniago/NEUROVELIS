@@ -253,6 +253,8 @@ MODEL_FEATURE_WINDOW_S = 30.0
 MODEL_SENSOR_SAMPLING_RATE_HZ = 10.0
 # Keep runtime feature extraction aligned with training notebook default (10 Hz).
 MODEL_USE_FIXED_SENSOR_SAMPLING_RATE = True
+# Minimum effective coverage of the configured feature window required for inference.
+MODEL_MIN_WINDOW_COVERAGE_RATIO = 0.80
 # Training notebook filtered spo2_valid rows before sensor feature extraction.
 # Keep this False by default in deployment to avoid over-dropping realtime windows.
 MODEL_REQUIRE_SPO2_VALID_FOR_FEATURE_WINDOW = False
@@ -275,6 +277,14 @@ MODEL_UNKNOWN_CONFIDENCE_THRESHOLD = 0.50
 
 # EMA smoothing for class probabilities (0<alpha<=1). Lower = smoother.
 MODEL_SMOOTHING_ALPHA = 0.35
+
+# Probability shaping to avoid overly peaked one-hot outputs in realtime UI.
+# temperature >1.0 flattens distribution while preserving ranking.
+MODEL_PROBABILITY_TEMPERATURE = 1.35
+# Small blend with uniform distribution so all classes keep non-zero visibility.
+MODEL_PROBABILITY_UNIFORM_MIX = 0.04
+# Minimum probability floor applied before renormalization.
+MODEL_PROBABILITY_FLOOR = 1e-5
 
 # ─── Visual Feature Extraction (MediaPipe Face Mesh) ────────────────────
 # Enables full realtime facial dynamics extraction for model features

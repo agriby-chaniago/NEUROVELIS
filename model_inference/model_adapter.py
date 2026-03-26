@@ -31,6 +31,43 @@ def _softmax(scores: dict[str, float]) -> dict[str, float]:
     return {k: v / total for k, v in exp_scores.items()}
 
 
+def _stabilize_class_probs(probs: dict[str, float]) -> dict[str, float]:
+    """Stabilize class probabilities to avoid degenerate one-hot outputs.
+
+    This keeps ranking intact while making percentages more informative for UI.
+    """
+    classes = list(config.MODEL_CLASSES)
+    safe = {k: max(0.0, float(probs.get(k, 0.0))) for k in classes}
+    total = sum(safe.values())
+    if total <= 0.0:
+        uniform = 1.0 / max(len(classes), 1)
+        return {k: uniform for k in classes}
+
+    safe = {k: v / total for k, v in safe.items()}
+
+    floor = max(0.0, float(getattr(config, "MODEL_PROBABILITY_FLOOR", 0.0)))
+    if floor > 0.0:
+        safe = {k: max(floor, v) for k, v in safe.items()}
+        total = sum(safe.values())
+        safe = {k: v / total for k, v in safe.items()}
+
+    temperature = max(1.0, float(getattr(config, "MODEL_PROBABILITY_TEMPERATURE", 1.0)))
+    if temperature > 1.0:
+        power = 1.0 / temperature
+        safe = {k: (v ** power) for k, v in safe.items()}
+        total = sum(safe.values())
+        safe = {k: v / total for k, v in safe.items()}
+
+    mix = max(0.0, min(0.5, float(getattr(config, "MODEL_PROBABILITY_UNIFORM_MIX", 0.0))))
+    if mix > 0.0:
+        uniform = 1.0 / max(len(classes), 1)
+        safe = {k: ((1.0 - mix) * v + mix * uniform) for k, v in safe.items()}
+        total = sum(safe.values())
+        safe = {k: v / total for k, v in safe.items()}
+
+    return safe
+
+
 def _unknown_payload(reason: str) -> dict:
     return {
         "model_label_top1": "unknown",
@@ -202,6 +239,7 @@ class ModelAdapter:
                     "stress": stress,
                     "depression": depression,
                 }
+                probs = _stabilize_class_probs(probs)
                 label_top1 = max(probs, key=lambda k: probs[k])
                 conf_top1 = float(probs[label_top1])
             else:
@@ -219,11 +257,11 @@ class ModelAdapter:
 
             result = {
                 "model_label_top1": label_top1,
-                "model_confidence_top1": round(conf_top1, 4) if conf_top1 is not None else None,
-                "model_probs_normal": round(float(probs["normal"]), 4),
-                "model_probs_anxiety": round(float(probs["anxiety"]), 4),
-                "model_probs_stress": round(float(probs["stress"]), 4),
-                "model_probs_depression": round(float(probs["depression"]), 4),
+                "model_confidence_top1": round(conf_top1, 6) if conf_top1 is not None else None,
+                "model_probs_normal": round(float(probs["normal"]), 6),
+                "model_probs_anxiety": round(float(probs["anxiety"]), 6),
+                "model_probs_stress": round(float(probs["stress"]), 6),
+                "model_probs_depression": round(float(probs["depression"]), 6),
                 "model_alert_active": model_alert,
                 "model_alert_reasons": (
                     f"CLASS={label_top1.upper()} CONF={round(conf_top1, 3)}"
@@ -280,6 +318,7 @@ def _predict_rule_based(sensor_data: dict, frame_bytes: Optional[bytes]) -> dict
         "depression": 0.2 + (0.8 * hr_low) + (0.2 * (1.0 - gsr_stress)),
     }
     probs = _softmax(scores)
+    probs = _stabilize_class_probs(probs)
 
     label_top1 = max(probs, key=lambda k: probs[k])
     conf_top1 = float(probs[label_top1])
@@ -287,11 +326,11 @@ def _predict_rule_based(sensor_data: dict, frame_bytes: Optional[bytes]) -> dict
 
     result = {
         "model_label_top1": label_top1,
-        "model_confidence_top1": round(conf_top1, 4),
-        "model_probs_normal": round(float(probs["normal"]), 4),
-        "model_probs_anxiety": round(float(probs["anxiety"]), 4),
-        "model_probs_stress": round(float(probs["stress"]), 4),
-        "model_probs_depression": round(float(probs["depression"]), 4),
+        "model_confidence_top1": round(conf_top1, 6),
+        "model_probs_normal": round(float(probs["normal"]), 6),
+        "model_probs_anxiety": round(float(probs["anxiety"]), 6),
+        "model_probs_stress": round(float(probs["stress"]), 6),
+        "model_probs_depression": round(float(probs["depression"]), 6),
         "model_alert_active": model_alert,
         "model_alert_reasons": (
             f"CLASS={label_top1.upper()} CONF={round(conf_top1, 3)}"

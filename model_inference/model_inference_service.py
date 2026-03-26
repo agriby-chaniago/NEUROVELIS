@@ -342,11 +342,11 @@ class ModelInferenceService:
 
         out = dict(result)
         out["model_label_top1"] = label_top1
-        out["model_confidence_top1"] = round(conf_top1, 4)
-        out["model_probs_normal"] = round(normalized["normal"], 4)
-        out["model_probs_anxiety"] = round(normalized["anxiety"], 4)
-        out["model_probs_stress"] = round(normalized["stress"], 4)
-        out["model_probs_depression"] = round(normalized["depression"], 4)
+        out["model_confidence_top1"] = round(conf_top1, 6)
+        out["model_probs_normal"] = round(normalized["normal"], 6)
+        out["model_probs_anxiety"] = round(normalized["anxiety"], 6)
+        out["model_probs_stress"] = round(normalized["stress"], 6)
+        out["model_probs_depression"] = round(normalized["depression"], 6)
         out["model_alert_active"] = (
             label_top1 != "normal" and conf_top1 >= config.MODEL_ALERT_CONFIDENCE_THRESHOLD
         )
@@ -571,6 +571,21 @@ class ModelInferenceService:
             if len(recent_rows) < min_points:
                 return None
 
+        effective_window_seconds = max(
+            float(recent_rows[-1]["t"] - recent_rows[0]["t"]),
+            0.0,
+        )
+        window_coverage_ratio = min(
+            1.0,
+            effective_window_seconds / max(window_seconds_cfg, 1e-6),
+        )
+        min_coverage = max(
+            0.1,
+            min(1.0, float(getattr(config, "MODEL_MIN_WINDOW_COVERAGE_RATIO", 0.8))),
+        )
+        if window_coverage_ratio < min_coverage:
+            return None
+
         hr_values = [float(r["hr"]) for r in recent_rows if r["hr"] is not None]
         gsr_values = [float(r["gsr"]) for r in recent_rows if r["gsr"] is not None]
         spo2_values = [float(r["spo2"]) for r in recent_rows if r["spo2"] is not None]
@@ -674,4 +689,7 @@ class ModelInferenceService:
             "gsr_range": gsr_range,
             "spo2_mean": spo2_mean,
             "motion_per_hr": motion_per_hr,
+            "window_effective_seconds": effective_window_seconds,
+            "window_expected_seconds": float(window_seconds_cfg),
+            "window_coverage_ratio": window_coverage_ratio,
         }
