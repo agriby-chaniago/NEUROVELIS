@@ -55,6 +55,10 @@ class ModelInferenceService:
         self._smoothed_probs: Optional[dict[str, float]] = None
         self._last_feature_vector: Optional[dict[str, float]] = None
         self._last_feature_timestamp_utc: Optional[str] = None
+        self._sensor_touch_prev = False
+        self._sensor_touch_missing_since: Optional[float] = None
+        self._sensor_touch_paused = False
+        self._class_warmup_until = 0.0
         self._latest: dict = {
             "model_label_top1": "unknown",
             "model_confidence_top1": None,
@@ -186,7 +190,31 @@ class ModelInferenceService:
                 frame=frame,
                 visual_features=visual_features,
             )
+
+            self._update_sensor_touch_state(sensor_data=sensor_data, now=start)
             if start >= next_inference_at:
+                if self._sensor_touch_paused:
+                    result = _unknown_payload(reason="SENSOR_NOT_TOUCHED_PAUSED")
+                    result["model_latency_ms"] = 0
+                    result["model_face_detected"] = face_detected
+                    result["model_face_landmarks"] = landmarks_norm
+                    result["model_face_backend"] = self._visual_extractor.health().get("backend")
+                    result["model_timestamp_utc"] = datetime.now(timezone.utc).isoformat()
+
+                    with self._lock:
+                        self._last_feature_vector = None
+                        self._last_feature_timestamp_utc = None
+                        self._latest = dict(result)
+
+                    publish_result = dict(result)
+                    publish_result.pop("model_face_landmarks", None)
+                    self._sensor_manager.set_model_inference(publish_result)
+                    next_inference_at = start + interval
+
+                    elapsed = time.monotonic() - start
+                    self._stop_event.wait(timeout=max(0.0, visual_interval - elapsed))
+                    continue
+
                 feature_vector = self._build_feature_vector(min_points=min_points)
                 if feature_vector is not None:
                     with self._lock:
@@ -218,6 +246,7 @@ class ModelInferenceService:
                     result["model_latency_ms"] = latency_ms
 
                 result = self._apply_smoothing(result)
+                result = self._apply_class_warmup_gate(result=result, now=start)
                 result["model_face_detected"] = face_detected
                 result["model_face_landmarks"] = landmarks_norm
                 result["model_face_backend"] = self._visual_extractor.health().get("backend")
@@ -235,6 +264,56 @@ class ModelInferenceService:
 
             elapsed = time.monotonic() - start
             self._stop_event.wait(timeout=max(0.0, visual_interval - elapsed))
+
+    @staticmethod
+    def _is_sensor_touched(sensor_data: dict) -> bool:
+        """Heuristic for active sensor touch (finger/contact present)."""
+        hr_valid = bool(sensor_data.get("hr_valid"))
+        gsr_ok = sensor_data.get("gsr_conductance_us") is not None
+        return hr_valid and gsr_ok
+
+    def _update_sensor_touch_state(self, sensor_data: dict, now: float) -> None:
+        touched = self._is_sensor_touched(sensor_data)
+        grace_s = max(1.0, min(3.0, float(getattr(config, "MODEL_SENSOR_TOUCH_GRACE_S", 2.0))))
+        warmup_s = max(0.0, float(getattr(config, "MODEL_CLASS_WARMUP_S", 2.0)))
+
+        if touched:
+            self._sensor_touch_missing_since = None
+            if self._sensor_touch_paused or not self._sensor_touch_prev:
+                self._sensor_touch_paused = False
+                self._smoothed_probs = None
+                self._class_warmup_until = now + warmup_s
+            self._sensor_touch_prev = True
+            return
+
+        if self._sensor_touch_missing_since is None:
+            self._sensor_touch_missing_since = now
+
+        if (now - self._sensor_touch_missing_since) >= grace_s:
+            self._sensor_touch_paused = True
+            self._smoothed_probs = None
+        self._sensor_touch_prev = False
+
+    def _apply_class_warmup_gate(self, result: dict, now: float) -> dict:
+        """Hold class output briefly after touch/start so model can stabilize."""
+        if now >= self._class_warmup_until:
+            return result
+
+        label = result.get("model_label_top1")
+        if label not in config.MODEL_CLASSES:
+            return result
+
+        remaining = max(0.0, self._class_warmup_until - now)
+        warmed = dict(result)
+        warmed["model_label_top1"] = "unknown"
+        warmed["model_confidence_top1"] = None
+        warmed["model_probs_normal"] = 0.0
+        warmed["model_probs_anxiety"] = 0.0
+        warmed["model_probs_stress"] = 0.0
+        warmed["model_probs_depression"] = 0.0
+        warmed["model_alert_active"] = False
+        warmed["model_alert_reasons"] = f"CLASS_WARMUP:{round(remaining, 1)}s"
+        return warmed
 
     def _apply_smoothing(self, result: dict) -> dict:
         """EMA smoothing on class probabilities to reduce UI flicker."""

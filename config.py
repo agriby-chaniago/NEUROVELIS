@@ -256,6 +256,10 @@ MODEL_USE_FIXED_SENSOR_SAMPLING_RATE = True
 # Training notebook filtered spo2_valid rows before sensor feature extraction.
 # Keep this False by default in deployment to avoid over-dropping realtime windows.
 MODEL_REQUIRE_SPO2_VALID_FOR_FEATURE_WINDOW = False
+# If sensor is untouched, wait this grace period (1-3s recommended) before pausing inference.
+MODEL_SENSOR_TOUCH_GRACE_S = 2.0
+# Warmup hold after sensor touch/resume to stabilize class decision.
+MODEL_CLASS_WARMUP_S = 2.0
 
 # Final class order for the dashboard and API responses.
 MODEL_CLASSES = ["normal", "anxiety", "stress", "depression"]
