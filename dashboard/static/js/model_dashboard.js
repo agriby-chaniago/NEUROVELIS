@@ -376,10 +376,19 @@ function formatLabel(label) {
 }
 
 function updateSignalStatus(data) {
-  const hasClass =
-    !!data.model_label_top1 && data.model_label_top1 !== "unknown";
-  setText("val-signal", hasClass ? "OK" : "NO SIGNAL");
-  setText("val-state", hasClass ? "RUNNING" : "DEGRADED");
+  const label = String(data.model_label_top1 || "").toLowerCase();
+  if (label === "unknown") {
+    setText("val-signal", "NO SIGNAL");
+    setText("val-state", "DEGRADED");
+    return;
+  }
+  if (label === "uncertain") {
+    setText("val-signal", "OK");
+    setText("val-state", "UNCERTAIN");
+    return;
+  }
+  setText("val-signal", "OK");
+  setText("val-state", "RUNNING");
 }
 
 function updateAlert(data) {

@@ -321,6 +321,10 @@ class ModelInferenceService:
         active_classes = ["anxiety", "stress", "depression"] if exclude_normal else [
             "normal", "anxiety", "stress", "depression"
         ]
+        if str(result.get("model_label_top1") or "").lower() not in active_classes:
+            self._smoothed_probs = None
+            return result
+
         probs = {
             "normal": 0.0 if exclude_normal else float(result.get("model_probs_normal", 0.0) or 0.0),
             "anxiety": float(result.get("model_probs_anxiety", 0.0) or 0.0),
@@ -328,7 +332,7 @@ class ModelInferenceService:
             "depression": float(result.get("model_probs_depression", 0.0) or 0.0),
         }
         total = sum(probs[k] for k in active_classes)
-        if total <= 0.0 or result.get("model_label_top1") == "unknown":
+        if total <= 0.0:
             self._smoothed_probs = None
             return result
 

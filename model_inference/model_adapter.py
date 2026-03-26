@@ -75,22 +75,57 @@ def _unknown_payload(reason: str) -> dict:
     }
 
 
-def _apply_confidence_guard(result: dict) -> dict:
-    """Force unknown label when confidence is too low."""
-    conf = result.get("model_confidence_top1")
-    label = result.get("model_label_top1")
-    if label in config.MODEL_CLASSES and conf is not None:
-        try:
-            conf_f = float(conf)
-        except Exception:
-            return result
-        if conf_f < config.MODEL_UNKNOWN_CONFIDENCE_THRESHOLD:
-            guarded = dict(result)
-            guarded["model_label_top1"] = "unknown"
-            guarded["model_alert_active"] = False
-            guarded["model_alert_reasons"] = f"LOW_CONF:{round(conf_f, 3)}"
-            return guarded
-    return result
+def _decision_classes() -> list[str]:
+    if bool(getattr(config, "MODEL_EXCLUDE_NORMAL_CLASS", False)):
+        return ["anxiety", "stress", "depression"]
+    return list(config.MODEL_CLASSES)
+
+
+def _apply_uncertainty_guard(result: dict) -> dict:
+    """Mark output as uncertain when top-1 confidence/separation is weak."""
+    if not bool(getattr(config, "MODEL_ENABLE_UNCERTAIN_GATE", True)):
+        return result
+
+    label = str(result.get("model_label_top1") or "").lower()
+    decision_classes = _decision_classes()
+    if label not in decision_classes:
+        return result
+
+    probs = {
+        cls: max(0.0, float(result.get(f"model_probs_{cls}", 0.0) or 0.0))
+        for cls in decision_classes
+    }
+    ranked = sorted(probs.items(), key=lambda kv: kv[1], reverse=True)
+    if not ranked:
+        return result
+
+    top1_label, top1_prob = ranked[0]
+    top2_prob = ranked[1][1] if len(ranked) > 1 else 0.0
+    margin = max(0.0, top1_prob - top2_prob)
+
+    min_top1 = max(0.0, float(getattr(config, "MODEL_UNCERTAIN_MIN_TOP1_CONF", 0.65)))
+    min_margin = max(0.0, float(getattr(config, "MODEL_UNCERTAIN_MIN_MARGIN", 0.15)))
+
+    reasons = []
+    if top1_prob < min_top1:
+        reasons.append(f"LOW_CONF:{round(top1_prob, 3)}<{round(min_top1, 3)}")
+    if margin < min_margin:
+        reasons.append(f"LOW_MARGIN:{round(margin, 3)}<{round(min_margin, 3)}")
+
+    if not reasons:
+        return result
+
+    guarded = dict(result)
+    guarded["model_label_top1"] = "uncertain"
+    guarded["model_confidence_top1"] = round(top1_prob, 6)
+    guarded["model_alert_active"] = False
+    guarded["model_alert_reasons"] = (
+        "UNCERTAIN:"
+        + "|".join(reasons)
+        + f"|TOP1={top1_label.upper()}({round(top1_prob, 3)})"
+        + f"|TOP2={round(top2_prob, 3)}"
+    )
+    return guarded
 
 
 @dataclass
@@ -263,7 +298,7 @@ class ModelAdapter:
                     else ""
                 ),
             }
-            return _apply_confidence_guard(result)
+            return _apply_uncertainty_guard(result)
         except Exception as exc:
             return _unknown_payload(f"MODEL_PREDICT_ERROR:{exc}")
 
@@ -332,4 +367,4 @@ def _predict_rule_based(sensor_data: dict, frame_bytes: Optional[bytes]) -> dict
             else ""
         ),
     }
-    return _apply_confidence_guard(result)
+    return _apply_uncertainty_guard(result)

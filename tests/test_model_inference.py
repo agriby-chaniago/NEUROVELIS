@@ -1,6 +1,6 @@
 """Tests for model inference integration (adapter + Flask routes)."""
 
-from model_inference.model_adapter import _apply_confidence_guard
+from model_inference.model_adapter import _apply_uncertainty_guard
 from dashboard.app import create_app
 
 
@@ -53,25 +53,28 @@ class _DummyModelService:
         }
 
 
-def test_confidence_guard_forces_unknown(monkeypatch):
+def test_uncertainty_guard_marks_uncertain(monkeypatch):
     import config
 
-    monkeypatch.setattr(config, "MODEL_UNKNOWN_CONFIDENCE_THRESHOLD", 0.5)
+    monkeypatch.setattr(config, "MODEL_ENABLE_UNCERTAIN_GATE", True)
+    monkeypatch.setattr(config, "MODEL_UNCERTAIN_MIN_TOP1_CONF", 0.65)
+    monkeypatch.setattr(config, "MODEL_UNCERTAIN_MIN_MARGIN", 0.15)
+    monkeypatch.setattr(config, "MODEL_EXCLUDE_NORMAL_CLASS", True)
 
     result = {
         "model_label_top1": "stress",
-        "model_confidence_top1": 0.41,
+        "model_confidence_top1": 0.54,
         "model_probs_normal": 0.1,
-        "model_probs_anxiety": 0.2,
-        "model_probs_stress": 0.41,
-        "model_probs_depression": 0.29,
+        "model_probs_anxiety": 0.31,
+        "model_probs_stress": 0.54,
+        "model_probs_depression": 0.15,
         "model_alert_active": True,
         "model_alert_reasons": "CLASS=STRESS",
     }
-    out = _apply_confidence_guard(result)
-    assert out["model_label_top1"] == "unknown"
+    out = _apply_uncertainty_guard(result)
+    assert out["model_label_top1"] == "uncertain"
     assert out["model_alert_active"] is False
-    assert "LOW_CONF" in out["model_alert_reasons"]
+    assert "UNCERTAIN" in out["model_alert_reasons"]
 
 
 def test_model_routes_exposed():

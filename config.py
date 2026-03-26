@@ -270,13 +270,23 @@ MODEL_CLASSES = ["normal", "anxiety", "stress", "depression"]
 MODEL_UNKNOWN_ON_MISSING_DATA = True
 
 # Alert when top-1 class is not normal and confidence exceeds this threshold.
-MODEL_ALERT_CONFIDENCE_THRESHOLD = 0.70
+# Tuned for moderate model accuracy (~55%) so alerts stay useful but not too sparse.
+MODEL_ALERT_CONFIDENCE_THRESHOLD = 0.68
 
-# Force Unknown when top-1 confidence is below this threshold.
-MODEL_UNKNOWN_CONFIDENCE_THRESHOLD = 0.50
+# Enable uncertainty gate so low-certainty outputs are marked UNCERTAIN
+# instead of forcing a potentially misleading class label.
+MODEL_ENABLE_UNCERTAIN_GATE = True
+
+# Minimum top-1 probability required for a final class decision.
+# 0.60 keeps guard active while avoiding excessive UNCERTAIN in moderate-accuracy models.
+MODEL_UNCERTAIN_MIN_TOP1_CONF = 0.60
+
+# Minimum top-1 minus top-2 probability gap required for class separation.
+# 0.12 is a balanced separation threshold for noisy realtime signals.
+MODEL_UNCERTAIN_MIN_MARGIN = 0.12
 
 # EMA smoothing for class probabilities (0<alpha<=1). Lower = smoother.
-MODEL_SMOOTHING_ALPHA = 0.35
+MODEL_SMOOTHING_ALPHA = 0.30
 
 # Show prediction distribution on 3 target classes only (exclude normal).
 MODEL_EXCLUDE_NORMAL_CLASS = True
