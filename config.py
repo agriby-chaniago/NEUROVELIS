@@ -233,10 +233,10 @@ MODEL_INFERENCE_BACKEND = "sklearn_pickle"
 MODEL_INFERENCE_INTERVAL_S = 1.0
 MODEL_INFERENCE_TIMEOUT_MS = 800
 MODEL_INFERENCE_MODEL_PATH = os.path.join(
-    os.path.dirname(__file__), "model_inference", "artifacts", "model.pkl"
+    os.path.dirname(__file__), "model_inference", "artifacts", "model.joblib"
 )
 MODEL_INFERENCE_SCALER_PATH = os.path.join(
-    os.path.dirname(__file__), "model_inference", "artifacts", "scaler.pkl"
+    os.path.dirname(__file__), "model_inference", "artifacts", "scaler.joblib"
 )
 MODEL_INFERENCE_MIN_POINTS = 8
 
