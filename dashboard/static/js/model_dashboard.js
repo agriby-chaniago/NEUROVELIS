@@ -102,6 +102,48 @@ const confChart = new Chart(document.getElementById("chart-conf"), {
 const statusDot = document.getElementById("status-dot");
 const lastUpdate = document.getElementById("last-update");
 const footerTs = document.getElementById("footer-ts");
+const cameraFeed = document.getElementById("camera-feed");
+const meshCanvas = document.getElementById("face-mesh-overlay");
+const meshCtx = meshCanvas ? meshCanvas.getContext("2d") : null;
+
+function syncMeshCanvasSize() {
+  if (!meshCanvas || !cameraFeed) return;
+  const width = cameraFeed.clientWidth;
+  const height = cameraFeed.clientHeight;
+  if (width <= 0 || height <= 0) return;
+  if (meshCanvas.width !== width || meshCanvas.height !== height) {
+    meshCanvas.width = width;
+    meshCanvas.height = height;
+  }
+}
+
+function clearMeshOverlay() {
+  if (!meshCanvas || !meshCtx) return;
+  syncMeshCanvasSize();
+  meshCtx.clearRect(0, 0, meshCanvas.width, meshCanvas.height);
+}
+
+function drawFaceMesh(landmarks) {
+  if (!meshCanvas || !meshCtx) return;
+  syncMeshCanvasSize();
+  meshCtx.clearRect(0, 0, meshCanvas.width, meshCanvas.height);
+  if (!Array.isArray(landmarks) || landmarks.length === 0) return;
+
+  meshCtx.fillStyle = "rgba(26, 95, 173, 0.75)";
+  meshCtx.strokeStyle = "rgba(26, 95, 173, 0.35)";
+  meshCtx.lineWidth = 1;
+
+  // Render dense landmark points to visualize face mesh in realtime.
+  for (const point of landmarks) {
+    if (!Array.isArray(point) || point.length < 2) continue;
+    const x = Number(point[0]) * meshCanvas.width;
+    const y = Number(point[1]) * meshCanvas.height;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    meshCtx.beginPath();
+    meshCtx.arc(x, y, 1.2, 0, Math.PI * 2);
+    meshCtx.fill();
+  }
+}
 
 function setText(id, value) {
   const el = document.getElementById(id);
@@ -206,6 +248,7 @@ function connect() {
     updateSignalStatus(data);
     updateAlert(data);
     updateCharts(data);
+    drawFaceMesh(data.model_face_landmarks);
 
     if (data.camera_fps !== null && data.camera_fps !== undefined) {
       setText("camera-fps", `${Number(data.camera_fps).toFixed(1)} fps`);
@@ -235,6 +278,7 @@ function onCameraLoad() {
     camStatus.textContent = "Live";
     camStatus.className = "";
   }
+  syncMeshCanvasSize();
 }
 
 function onCameraError() {
@@ -242,7 +286,10 @@ function onCameraError() {
     camStatus.textContent = "Camera not available";
     camStatus.className = "error";
   }
+  clearMeshOverlay();
   const feed = document.getElementById("camera-feed");
   if (feed) feed.style.display = "none";
   if (camSection) camSection.style.display = "none";
 }
+
+window.addEventListener("resize", syncMeshCanvasSize);

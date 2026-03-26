@@ -57,6 +57,9 @@ class ModelInferenceService:
             "model_probs_depression": 0.0,
             "model_alert_active": False,
             "model_alert_reasons": "SERVICE_INIT",
+            "model_face_detected": False,
+            "model_face_landmarks": [],
+            "model_face_backend": self._visual_extractor.health().get("backend"),
             "model_latency_ms": None,
             "model_timestamp_utc": None,
         }
@@ -132,6 +135,11 @@ class ModelInferenceService:
             sensor_data = self._sensor_manager.get_latest()
             frame = self._camera_reader.get_frame() if self._camera_reader is not None else None
             visual_features = self._visual_extractor.extract(frame)
+            face_detected = bool(visual_features.get("face_detected"))
+            landmarks_norm = visual_features.get("landmarks_norm")
+            if not isinstance(landmarks_norm, list):
+                landmarks_norm = []
+
             self._append_history(
                 sensor_data=sensor_data,
                 frame=frame,
@@ -164,6 +172,9 @@ class ModelInferenceService:
                 result["model_latency_ms"] = latency_ms
 
             result = self._apply_smoothing(result)
+            result["model_face_detected"] = face_detected
+            result["model_face_landmarks"] = landmarks_norm
+            result["model_face_backend"] = self._visual_extractor.health().get("backend")
 
             result["model_timestamp_utc"] = datetime.now(timezone.utc).isoformat()
 
@@ -221,7 +232,7 @@ class ModelInferenceService:
         self,
         sensor_data: dict,
         frame: Optional[bytes],
-        visual_features: Optional[dict[str, Optional[float]]] = None,
+        visual_features: Optional[dict[str, object]] = None,
     ):
         now = time.monotonic()
         hr = sensor_data.get("heart_rate_bpm")

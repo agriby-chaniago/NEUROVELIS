@@ -13,8 +13,10 @@ var(--accent); } .metric-card.conf .value { color: #1e7845; } .metric-card.state
 #0277bd; } .metric-card.lat .value { color: #c25d00; } .metric-card.signal
 .value { color: #0277bd; font-size: 1rem; } .metric-card.reason .value { color:
 #b71c1c; font-size: 0.84rem; overflow: hidden; text-overflow: ellipsis;
-white-space: nowrap; } .charts-grid { grid-template-columns: 1fr 1fr; } {%
-endblock %} {% block header_before_h1 %}
+white-space: nowrap; } #face-mesh-overlay { position: absolute; inset: 0; width:
+100%; height: 100%; pointer-events: none; z-index: 2; } #camera-fps { z-index:
+3; } .charts-grid { grid-template-columns: 1fr 1fr; } {% endblock %} {% block
+header_before_h1 %}
 <div id="status-dot"></div>
 {% endblock %} {% block header_after_h1 %}
 <span id="last-update">Waiting for model data...</span>
@@ -39,6 +41,7 @@ endblock %} {% block header_before_h1 %}
           onerror="onCameraError()"
           onload="onCameraLoad()"
         />
+        <canvas id="face-mesh-overlay"></canvas>
         <span id="camera-fps">- fps</span>
       </div>
     </div>

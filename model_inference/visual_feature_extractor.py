@@ -178,14 +178,15 @@ class VisualFeatureExtractor:
             "model_path": self._landmarker_model_path or None,
         }
 
-    def extract(self, frame_bytes: Optional[bytes]) -> dict[str, Optional[float]]:
+    def extract(self, frame_bytes: Optional[bytes]) -> dict[str, object]:
         """Extract face dynamics features from a JPEG frame."""
-        empty = {
+        empty: dict[str, object] = {
             "face_detected": False,
             "ear": None,
             "mar": None,
             "motion": None,
             "blink_event": 0.0,
+            "landmarks_norm": [],
         }
 
         if (
@@ -235,7 +236,7 @@ class VisualFeatureExtractor:
             logger.debug("VisualFeatureExtractor extract error: %s", exc)
             return empty
 
-    def _features_from_landmarks(self, landmarks, width: int, height: int) -> dict[str, float | bool]:
+    def _features_from_landmarks(self, landmarks, width: int, height: int) -> dict[str, object]:
         def point(idx: int) -> tuple[float, float]:
             p = landmarks[idx]
             return (float(p.x * width), float(p.y * height))
@@ -253,6 +254,10 @@ class VisualFeatureExtractor:
             "mar": float(mar),
             "motion": float(motion),
             "blink_event": float(blink_event),
+            "landmarks_norm": [
+                [round(float(p.x), 4), round(float(p.y), 4)]
+                for p in landmarks
+            ],
         }
 
     def _eye_aspect_ratio(self, point_fn, idx: tuple[int, int, int, int, int, int]) -> float:
