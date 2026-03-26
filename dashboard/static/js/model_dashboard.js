@@ -2,7 +2,7 @@
 
 const MAX_POINTS = 60;
 const RECONNECT_MS = 3000;
-const CLASS_ORDER = ["anxiety", "stress", "depression"];
+const CLASS_ORDER = ["normal", "anxiety", "stress", "depression"];
 
 Chart.defaults.color = "#52697e";
 Chart.defaults.borderColor = "#d0d9e4";
@@ -33,13 +33,13 @@ function pushVal(buf, val) {
 const probChart = new Chart(document.getElementById("chart-prob"), {
   type: "bar",
   data: {
-    labels: ["Anxiety", "Stress", "Depression"],
+    labels: ["Normal", "Anxiety", "Stress", "Depression"],
     datasets: [
       {
-        label: "Probability",
-        data: [0, 0, 0],
-        backgroundColor: ["#1a5fad", "#c25d00", "#b71c1c"],
-        borderColor: ["#1a5fad", "#c25d00", "#b71c1c"],
+        label: "Chance",
+        data: [0, 0, 0, 0],
+        backgroundColor: ["#4c6b2f", "#1a5fad", "#c25d00", "#b71c1c"],
+        borderColor: ["#4c6b2f", "#1a5fad", "#c25d00", "#b71c1c"],
         borderWidth: 1,
       },
     ],
@@ -375,6 +375,34 @@ function formatLabel(label) {
   return String(label).toUpperCase();
 }
 
+function getTopChance(data) {
+  const chances = {
+    normal: Number(data.model_chance_normal ?? data.model_probs_normal ?? NaN),
+    anxiety: Number(
+      data.model_chance_anxiety ?? data.model_probs_anxiety ?? NaN,
+    ),
+    stress: Number(data.model_chance_stress ?? data.model_probs_stress ?? NaN),
+    depression: Number(
+      data.model_chance_depression ?? data.model_probs_depression ?? NaN,
+    ),
+  };
+
+  const rawLabel = String(data.model_label_raw_top1 || "").toLowerCase();
+  if (CLASS_ORDER.includes(rawLabel) && Number.isFinite(chances[rawLabel])) {
+    return chances[rawLabel];
+  }
+
+  const label = String(data.model_label_top1 || "").toLowerCase();
+  if (CLASS_ORDER.includes(label) && Number.isFinite(chances[label])) {
+    return chances[label];
+  }
+
+  const values = CLASS_ORDER.map((k) => chances[k]).filter((v) =>
+    Number.isFinite(v),
+  );
+  return values.length ? Math.max(...values) : null;
+}
+
 function updateSignalStatus(data) {
   const label = String(data.model_label_top1 || "").toLowerCase();
   if (label === "unknown") {
@@ -406,11 +434,14 @@ function updateAlert(data) {
 
 function updateCards(data) {
   const topClass = formatLabel(data.model_label_top1);
-  const conf = data.model_confidence_top1;
+  const conf = getTopChance(data);
+  const fallbackConf = data.model_confidence_top1;
   const confPct =
     conf !== null && conf !== undefined
       ? `${(Number(conf) * 100).toFixed(1)}`
-      : "-";
+      : fallbackConf !== null && fallbackConf !== undefined
+        ? `${(Number(fallbackConf) * 100).toFixed(1)}`
+        : "-";
   const latency =
     data.model_latency_ms !== null && data.model_latency_ms !== undefined
       ? String(data.model_latency_ms)
@@ -432,15 +463,16 @@ function updateCards(data) {
 
 function updateCharts(data) {
   const probs = [
-    Number(data.model_probs_anxiety || 0),
-    Number(data.model_probs_stress || 0),
-    Number(data.model_probs_depression || 0),
+    Number(data.model_chance_normal ?? data.model_probs_normal ?? 0),
+    Number(data.model_chance_anxiety ?? data.model_probs_anxiety ?? 0),
+    Number(data.model_chance_stress ?? data.model_probs_stress ?? 0),
+    Number(data.model_chance_depression ?? data.model_probs_depression ?? 0),
   ];
   probChart.data.datasets[0].data = probs;
   probChart.update();
 
   pushLabel(data.model_timestamp_utc || data.timestamp_utc);
-  const conf = data.model_confidence_top1;
+  const conf = getTopChance(data);
   pushVal(
     confidenceBuf,
     conf !== null && conf !== undefined ? Number(conf) : null,

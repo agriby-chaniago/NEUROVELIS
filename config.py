@@ -285,11 +285,35 @@ MODEL_UNCERTAIN_MIN_TOP1_CONF = 0.60
 # 0.12 is a balanced separation threshold for noisy realtime signals.
 MODEL_UNCERTAIN_MIN_MARGIN = 0.12
 
+# Validation-set accuracy reference for runtime confidence sanity checks.
+# This does not retrain or recalibrate the model; it is used only as a guardrail.
+MODEL_VALIDATION_ACCURACY = 0.55
+
+# If enabled, very high top-1 confidence can still be flagged UNCERTAIN when it
+# is implausible relative to known model quality.
+MODEL_UNCERTAIN_OVERCONFIDENCE_GUARD = True
+
+# Absolute extreme-confidence trigger (e.g. 1.0).
+MODEL_UNCERTAIN_MAX_TOP1_CONF = 0.98
+
+# Additional trigger based on gap between top-1 confidence and known accuracy.
+# Example with accuracy 0.55: top-1 >= 0.90 triggers this guard.
+MODEL_UNCERTAIN_MAX_ACC_GAP = 0.35
+
 # EMA smoothing for class probabilities (0<alpha<=1). Lower = smoother.
 MODEL_SMOOTHING_ALPHA = 0.30
 
-# Show prediction distribution on 3 target classes only (exclude normal).
-MODEL_EXCLUDE_NORMAL_CLASS = True
+# Show prediction distribution on full 4 classes.
+MODEL_EXCLUDE_NORMAL_CLASS = False
+
+# Expose independent per-class chance from raw model logits (not normalized
+# across classes), so each class can be interpreted on its own 0-100 scale.
+MODEL_OUTPUT_INDEPENDENT_CHANCE = True
+
+# Temperature and bias for logit-to-chance conversion.
+# chance = sigmoid((logit - bias) / temperature)
+MODEL_CHANCE_LOGIT_TEMPERATURE = 1.6
+MODEL_CHANCE_LOGIT_BIAS = 0.15
 
 # ─── Visual Feature Extraction (MediaPipe Face Mesh) ────────────────────
 # Enables full realtime facial dynamics extraction for model features

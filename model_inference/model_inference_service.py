@@ -66,6 +66,10 @@ class ModelInferenceService:
             "model_probs_anxiety": 0.0,
             "model_probs_stress": 0.0,
             "model_probs_depression": 0.0,
+            "model_chance_normal": 0.0,
+            "model_chance_anxiety": 0.0,
+            "model_chance_stress": 0.0,
+            "model_chance_depression": 0.0,
             "model_alert_active": False,
             "model_alert_reasons": "SERVICE_INIT",
             "model_face_detected": False,
@@ -311,6 +315,10 @@ class ModelInferenceService:
         warmed["model_probs_anxiety"] = 0.0
         warmed["model_probs_stress"] = 0.0
         warmed["model_probs_depression"] = 0.0
+        warmed["model_chance_normal"] = 0.0
+        warmed["model_chance_anxiety"] = 0.0
+        warmed["model_chance_stress"] = 0.0
+        warmed["model_chance_depression"] = 0.0
         warmed["model_alert_active"] = False
         warmed["model_alert_reasons"] = f"CLASS_WARMUP:{round(remaining, 1)}s"
         return warmed

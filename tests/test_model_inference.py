@@ -1,6 +1,9 @@
 """Tests for model inference integration (adapter + Flask routes)."""
 
-from model_inference.model_adapter import _apply_uncertainty_guard
+from model_inference.model_adapter import (
+    _apply_uncertainty_guard,
+    _compute_independent_chances_from_scores,
+)
 from dashboard.app import create_app
 
 
@@ -60,6 +63,10 @@ def test_uncertainty_guard_marks_uncertain(monkeypatch):
     monkeypatch.setattr(config, "MODEL_UNCERTAIN_MIN_TOP1_CONF", 0.65)
     monkeypatch.setattr(config, "MODEL_UNCERTAIN_MIN_MARGIN", 0.15)
     monkeypatch.setattr(config, "MODEL_EXCLUDE_NORMAL_CLASS", True)
+    monkeypatch.setattr(config, "MODEL_UNCERTAIN_OVERCONFIDENCE_GUARD", True)
+    monkeypatch.setattr(config, "MODEL_VALIDATION_ACCURACY", 0.55)
+    monkeypatch.setattr(config, "MODEL_UNCERTAIN_MAX_TOP1_CONF", 0.98)
+    monkeypatch.setattr(config, "MODEL_UNCERTAIN_MAX_ACC_GAP", 0.35)
 
     result = {
         "model_label_top1": "stress",
@@ -73,8 +80,60 @@ def test_uncertainty_guard_marks_uncertain(monkeypatch):
     }
     out = _apply_uncertainty_guard(result)
     assert out["model_label_top1"] == "uncertain"
+    assert out["model_confidence_top1"] is None
+    assert out["model_confidence_raw_top1"] == 0.54
     assert out["model_alert_active"] is False
     assert "UNCERTAIN" in out["model_alert_reasons"]
+
+
+def test_uncertainty_guard_blocks_extreme_overconfidence(monkeypatch):
+    import config
+
+    monkeypatch.setattr(config, "MODEL_ENABLE_UNCERTAIN_GATE", True)
+    monkeypatch.setattr(config, "MODEL_UNCERTAIN_MIN_TOP1_CONF", 0.60)
+    monkeypatch.setattr(config, "MODEL_UNCERTAIN_MIN_MARGIN", 0.12)
+    monkeypatch.setattr(config, "MODEL_EXCLUDE_NORMAL_CLASS", True)
+    monkeypatch.setattr(config, "MODEL_UNCERTAIN_OVERCONFIDENCE_GUARD", True)
+    monkeypatch.setattr(config, "MODEL_VALIDATION_ACCURACY", 0.55)
+    monkeypatch.setattr(config, "MODEL_UNCERTAIN_MAX_TOP1_CONF", 0.98)
+    monkeypatch.setattr(config, "MODEL_UNCERTAIN_MAX_ACC_GAP", 0.35)
+
+    result = {
+        "model_label_top1": "stress",
+        "model_confidence_top1": 1.0,
+        "model_probs_normal": 0.0,
+        "model_probs_anxiety": 0.0,
+        "model_probs_stress": 1.0,
+        "model_probs_depression": 0.0,
+        "model_alert_active": True,
+        "model_alert_reasons": "CLASS=STRESS",
+    }
+    out = _apply_uncertainty_guard(result)
+    assert out["model_label_top1"] == "uncertain"
+    assert out["model_confidence_top1"] is None
+    assert out["model_confidence_raw_top1"] == 1.0
+    assert "OVERCONF" in out["model_alert_reasons"]
+
+
+def test_independent_chance_not_normalized(monkeypatch):
+    import config
+
+    monkeypatch.setattr(config, "MODEL_CHANCE_LOGIT_TEMPERATURE", 1.0)
+    monkeypatch.setattr(config, "MODEL_CHANCE_LOGIT_BIAS", 0.0)
+
+    scores = {
+        "normal": 0.8,
+        "anxiety": 0.2,
+        "stress": 2.0,
+        "depression": -0.3,
+    }
+    out = _compute_independent_chances_from_scores(scores)
+    assert 0.0 <= out["normal"] <= 1.0
+    assert 0.0 <= out["anxiety"] <= 1.0
+    assert 0.0 <= out["stress"] <= 1.0
+    assert 0.0 <= out["depression"] <= 1.0
+    assert out["stress"] > out["normal"] > out["anxiety"] > out["depression"]
+    assert sum(out.values()) > 1.0
 
 
 def test_model_routes_exposed():

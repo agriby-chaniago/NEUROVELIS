@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+import numpy as np
+
 import config
 
 
@@ -66,10 +68,16 @@ def _unknown_payload(reason: str) -> dict:
     return {
         "model_label_top1": "unknown",
         "model_confidence_top1": None,
+        "model_confidence_raw_top1": None,
+        "model_label_raw_top1": None,
         "model_probs_normal": 0.0,
         "model_probs_anxiety": 0.0,
         "model_probs_stress": 0.0,
         "model_probs_depression": 0.0,
+        "model_chance_normal": 0.0,
+        "model_chance_anxiety": 0.0,
+        "model_chance_stress": 0.0,
+        "model_chance_depression": 0.0,
         "model_alert_active": False,
         "model_alert_reasons": reason,
     }
@@ -79,6 +87,83 @@ def _decision_classes() -> list[str]:
     if bool(getattr(config, "MODEL_EXCLUDE_NORMAL_CLASS", False)):
         return ["anxiety", "stress", "depression"]
     return list(config.MODEL_CLASSES)
+
+
+def _validation_accuracy() -> float:
+    acc = float(getattr(config, "MODEL_VALIDATION_ACCURACY", 1.0))
+    return max(0.0, min(1.0, acc))
+
+
+def _sigmoid(value: float) -> float:
+    if value >= 0:
+        z = math.exp(-value)
+        return 1.0 / (1.0 + z)
+    z = math.exp(value)
+    return z / (1.0 + z)
+
+
+def _extract_class_scores(
+    model,
+    x_scaled,
+    classes: list[str],
+) -> Optional[dict[str, float]]:
+    if not hasattr(model, "decision_function"):
+        return None
+    try:
+        raw = model.decision_function(x_scaled)
+    except Exception:
+        return None
+
+    arr = np.asarray(raw)
+    if arr.ndim == 1:
+        if len(classes) == 2 and arr.size >= 1:
+            s = float(arr[0])
+            return {str(classes[0]): -s, str(classes[1]): s}
+        if arr.size == len(classes):
+            return {str(classes[i]): float(arr[i]) for i in range(len(classes))}
+        return None
+
+    if arr.ndim == 2 and arr.shape[0] >= 1:
+        row = arr[0]
+        if row.size == len(classes):
+            return {str(classes[i]): float(row[i]) for i in range(len(classes))}
+        if len(classes) == 2 and row.size == 1:
+            s = float(row[0])
+            return {str(classes[0]): -s, str(classes[1]): s}
+    return None
+
+
+def _compute_independent_chances_from_scores(
+    class_scores: dict[str, float],
+) -> dict[str, float]:
+    temperature = max(
+        0.05,
+        float(getattr(config, "MODEL_CHANCE_LOGIT_TEMPERATURE", 1.0)),
+    )
+    bias = float(getattr(config, "MODEL_CHANCE_LOGIT_BIAS", 0.0))
+
+    out: dict[str, float] = {}
+    for cls in config.MODEL_CLASSES:
+        score = float(class_scores.get(cls, 0.0))
+        out[cls] = _clamp01(_sigmoid((score - bias) / temperature))
+    return out
+
+
+def _compute_independent_chances(
+    model,
+    x_scaled,
+    classes: list[str],
+    probs: dict[str, float],
+) -> dict[str, float]:
+    # Fallback keeps behavior deterministic when model has no decision_function.
+    fallback = {cls: _clamp01(float(probs.get(cls, 0.0))) for cls in config.MODEL_CLASSES}
+    if not bool(getattr(config, "MODEL_OUTPUT_INDEPENDENT_CHANCE", True)):
+        return fallback
+
+    scores = _extract_class_scores(model=model, x_scaled=x_scaled, classes=classes)
+    if not scores:
+        return fallback
+    return _compute_independent_chances_from_scores(scores)
 
 
 def _apply_uncertainty_guard(result: dict) -> dict:
@@ -105,19 +190,32 @@ def _apply_uncertainty_guard(result: dict) -> dict:
 
     min_top1 = max(0.0, float(getattr(config, "MODEL_UNCERTAIN_MIN_TOP1_CONF", 0.65)))
     min_margin = max(0.0, float(getattr(config, "MODEL_UNCERTAIN_MIN_MARGIN", 0.15)))
+    enable_overconf = bool(getattr(config, "MODEL_UNCERTAIN_OVERCONFIDENCE_GUARD", True))
+    max_top1 = max(0.0, min(1.0, float(getattr(config, "MODEL_UNCERTAIN_MAX_TOP1_CONF", 0.98))))
+    max_acc_gap = max(0.0, float(getattr(config, "MODEL_UNCERTAIN_MAX_ACC_GAP", 0.35)))
+    val_acc = _validation_accuracy()
 
     reasons = []
     if top1_prob < min_top1:
         reasons.append(f"LOW_CONF:{round(top1_prob, 3)}<{round(min_top1, 3)}")
     if margin < min_margin:
         reasons.append(f"LOW_MARGIN:{round(margin, 3)}<{round(min_margin, 3)}")
+    if enable_overconf:
+        if top1_prob >= max_top1:
+            reasons.append(f"OVERCONF_ABS:{round(top1_prob, 3)}>={round(max_top1, 3)}")
+        if (top1_prob - val_acc) >= max_acc_gap:
+            reasons.append(
+                f"OVERCONF_ACC_GAP:{round(top1_prob - val_acc, 3)}>={round(max_acc_gap, 3)}"
+            )
 
     if not reasons:
         return result
 
     guarded = dict(result)
     guarded["model_label_top1"] = "uncertain"
-    guarded["model_confidence_top1"] = round(top1_prob, 6)
+    guarded["model_confidence_top1"] = None
+    guarded["model_confidence_raw_top1"] = round(top1_prob, 6)
+    guarded["model_label_raw_top1"] = top1_label
     guarded["model_alert_active"] = False
     guarded["model_alert_reasons"] = (
         "UNCERTAIN:"
@@ -269,6 +367,12 @@ class ModelAdapter:
                     "depression": depression,
                 }
                 probs = _stabilize_class_probs(probs)
+                chances = _compute_independent_chances(
+                    model=self._model,
+                    x_scaled=x_scaled,
+                    classes=classes,
+                    probs=probs,
+                )
                 label_top1 = max(probs, key=lambda k: probs[k])
                 conf_top1 = float(probs[label_top1])
             else:
@@ -276,6 +380,7 @@ class ModelAdapter:
                 label_top1 = pred if pred in config.MODEL_CLASSES else "unknown"
                 conf_top1 = None
                 probs = {k: 0.0 for k in config.MODEL_CLASSES}
+                chances = {k: 0.0 for k in config.MODEL_CLASSES}
 
             model_alert = (
                 label_top1 in config.MODEL_CLASSES
@@ -287,10 +392,16 @@ class ModelAdapter:
             result = {
                 "model_label_top1": label_top1,
                 "model_confidence_top1": round(conf_top1, 6) if conf_top1 is not None else None,
+                "model_confidence_raw_top1": round(conf_top1, 6) if conf_top1 is not None else None,
+                "model_label_raw_top1": label_top1,
                 "model_probs_normal": round(float(probs["normal"]), 6),
                 "model_probs_anxiety": round(float(probs["anxiety"]), 6),
                 "model_probs_stress": round(float(probs["stress"]), 6),
                 "model_probs_depression": round(float(probs["depression"]), 6),
+                "model_chance_normal": round(float(chances["normal"]), 6),
+                "model_chance_anxiety": round(float(chances["anxiety"]), 6),
+                "model_chance_stress": round(float(chances["stress"]), 6),
+                "model_chance_depression": round(float(chances["depression"]), 6),
                 "model_alert_active": model_alert,
                 "model_alert_reasons": (
                     f"CLASS={label_top1.upper()} CONF={round(conf_top1, 3)}"
@@ -356,10 +467,16 @@ def _predict_rule_based(sensor_data: dict, frame_bytes: Optional[bytes]) -> dict
     result = {
         "model_label_top1": label_top1,
         "model_confidence_top1": round(conf_top1, 6),
+        "model_confidence_raw_top1": round(conf_top1, 6),
+        "model_label_raw_top1": label_top1,
         "model_probs_normal": round(float(probs["normal"]), 6),
         "model_probs_anxiety": round(float(probs["anxiety"]), 6),
         "model_probs_stress": round(float(probs["stress"]), 6),
         "model_probs_depression": round(float(probs["depression"]), 6),
+        "model_chance_normal": round(float(probs["normal"]), 6),
+        "model_chance_anxiety": round(float(probs["anxiety"]), 6),
+        "model_chance_stress": round(float(probs["stress"]), 6),
+        "model_chance_depression": round(float(probs["depression"]), 6),
         "model_alert_active": model_alert,
         "model_alert_reasons": (
             f"CLASS={label_top1.upper()} CONF={round(conf_top1, 3)}"
