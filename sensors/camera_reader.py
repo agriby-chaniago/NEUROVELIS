@@ -23,6 +23,7 @@ import logging
 import queue
 import struct
 import subprocess
+import sys
 import threading
 import time
 from collections import deque
@@ -457,7 +458,7 @@ class CameraReader:
             raise RuntimeError(f"Camera worker file not found: {worker_path}")
 
         proc = subprocess.Popen(
-            ["/usr/bin/python3", str(worker_path)],
+            [sys.executable, "camera_worker.py"],
             stdout=subprocess.PIPE,
             cwd=str(worker_path.parent),
             bufsize=0,
@@ -470,8 +471,9 @@ class CameraReader:
         self._backend = "worker_subprocess"
         self._error = None
         logger.info(
-            "CameraReader: worker subprocess started (%s via /usr/bin/python3)",
+            "CameraReader: worker subprocess started (%s via %s)",
             worker_path,
+            sys.executable,
         )
 
         def _read_exact(size: int) -> Optional[bytes]:
