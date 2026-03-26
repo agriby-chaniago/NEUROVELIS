@@ -137,6 +137,8 @@ class ModelAdapter:
         feature_vector: Optional[dict[str, float]] = None,
     ) -> dict:
         backend = (self.backend or "rule_based").lower().strip()
+        if getattr(config, "MODEL_REQUIRE_TRAINED_BACKEND", False) and backend != "sklearn_pickle":
+            return _unknown_payload("MODEL_ONLY_MODE")
         if backend == "sklearn_pickle":
             return self._predict_sklearn(
                 sensor_data=sensor_data,
@@ -162,12 +164,20 @@ class ModelAdapter:
 
         sensor_stale = bool(sensor_data.get("sensor_stale"))
         missing_camera = frame_bytes is None
-        if config.MODEL_UNKNOWN_ON_MISSING_DATA and (missing_camera or sensor_stale):
+        missing_sensor_core = (
+            (not bool(sensor_data.get("hr_valid")))
+            or (sensor_data.get("gsr_conductance_us") is None)
+        )
+        if config.MODEL_UNKNOWN_ON_MISSING_DATA and (
+            missing_camera or sensor_stale or missing_sensor_core
+        ):
             reason_parts = []
             if missing_camera:
                 reason_parts.append("NO_CAMERA")
             if sensor_stale:
                 reason_parts.append("SENSOR_STALE")
+            if missing_sensor_core:
+                reason_parts.append("NO_SENSOR_CORE")
             return _unknown_payload("|".join(reason_parts) or "NO_SIGNAL")
 
         if not feature_vector:

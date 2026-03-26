@@ -233,6 +233,8 @@ ACTIVE_SENSORS = {
 #   pytorch/onnx/tensorflow -> reserved for future model integration
 MODEL_INFERENCE_ENABLED = True
 MODEL_INFERENCE_BACKEND = "sklearn_pickle"
+# Enforce trained-model inference only (disable rule_based fallback path).
+MODEL_REQUIRE_TRAINED_BACKEND = True
 MODEL_INFERENCE_INTERVAL_S = 1.0
 # Visual feature extraction/mesh refresh cadence (independent from model inference).
 # Lower value = smoother face mesh overlay but more CPU usage.

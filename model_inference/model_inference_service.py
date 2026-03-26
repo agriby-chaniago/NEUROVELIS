@@ -185,6 +185,10 @@ class ModelInferenceService:
                     with self._lock:
                         self._last_feature_vector = dict(feature_vector)
                         self._last_feature_timestamp_utc = datetime.now(timezone.utc).isoformat()
+                else:
+                    with self._lock:
+                        self._last_feature_vector = None
+                        self._last_feature_timestamp_utc = None
 
                 try:
                     result = self._adapter.predict(
@@ -345,6 +349,9 @@ class ModelInferenceService:
         if len(rows) < min_points:
             return None
 
+        # Use only the freshest tail window for strict realtime validity checks.
+        recent_rows = rows[-min_points:]
+
         hr_values = [r["hr"] for r in rows if r["hr"] is not None]
         gsr_values = [r["gsr"] for r in rows if r["gsr"] is not None]
         spo2_values = [r["spo2"] for r in rows if r["spo2"] is not None]
@@ -352,28 +359,37 @@ class ModelInferenceService:
         mar_values = [r["mar"] for r in rows if r["mar"] is not None]
         motion_values = [r["motion"] for r in rows if r["motion"] is not None]
 
+        recent_hr_values = [r["hr"] for r in recent_rows if r["hr"] is not None]
+        recent_gsr_values = [r["gsr"] for r in recent_rows if r["gsr"] is not None]
+        recent_ear_values = [r["ear"] for r in recent_rows if r["ear"] is not None]
+        recent_mar_values = [r["mar"] for r in recent_rows if r["mar"] is not None]
+        recent_motion_values = [r["motion"] for r in recent_rows if r["motion"] is not None]
+
         if len(hr_values) < min_points or len(gsr_values) < min_points:
+            return None
+        if len(recent_hr_values) < min_points or len(recent_gsr_values) < min_points:
             return None
 
         visual_runtime_enabled = bool(
             self._visual_extractor.health().get("enabled_runtime")
         )
+        if not visual_runtime_enabled:
+            return None
 
         # Visual facemesh features require at least a small stable sample.
         min_visual_points = max(3, min_points // 2)
-        if visual_runtime_enabled and (
+        if (
             len(ear_values) < min_visual_points
             or len(mar_values) < min_visual_points
             or len(motion_values) < min_visual_points
         ):
             return None
-
-        if not ear_values:
-            ear_values = [0.25 for _ in rows]
-        if not mar_values:
-            mar_values = [0.35 for _ in rows]
-        if not motion_values:
-            motion_values = [float(r.get("frame_changed", 0.0) or 0.0) for r in rows]
+        if (
+            len(recent_ear_values) < min_visual_points
+            or len(recent_mar_values) < min_visual_points
+            or len(recent_motion_values) < min_visual_points
+        ):
+            return None
 
         window_seconds = max(rows[-1]["t"] - rows[0]["t"], 1.0)
 
