@@ -9,7 +9,6 @@ available. Future backends (pytorch/onnx/tensorflow) can plug into the same
 from __future__ import annotations
 
 import math
-import pickle
 import joblib
 from dataclasses import dataclass
 from pathlib import Path
