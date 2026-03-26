@@ -315,6 +315,12 @@ MODEL_OUTPUT_INDEPENDENT_CHANCE = True
 MODEL_CHANCE_LOGIT_TEMPERATURE = 1.6
 MODEL_CHANCE_LOGIT_BIAS = 0.15
 
+# Post-calibration compression for independent chance values.
+# final = clamp(0.5 + (raw - 0.5) * shrinkage, min, max)
+MODEL_CHANCE_SHRINKAGE = 0.70
+MODEL_CHANCE_MIN = 0.03
+MODEL_CHANCE_MAX = 0.92
+
 # ─── Visual Feature Extraction (MediaPipe Face Mesh) ────────────────────
 # Enables full realtime facial dynamics extraction for model features
 # (EAR, MAR, blink rate, facial motion).

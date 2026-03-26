@@ -102,6 +102,17 @@ def _sigmoid(value: float) -> float:
     return z / (1.0 + z)
 
 
+def _postprocess_chance(raw: float) -> float:
+    shrinkage = _clamp01(float(getattr(config, "MODEL_CHANCE_SHRINKAGE", 1.0)))
+    min_chance = _clamp01(float(getattr(config, "MODEL_CHANCE_MIN", 0.0)))
+    max_chance = _clamp01(float(getattr(config, "MODEL_CHANCE_MAX", 1.0)))
+    if max_chance < min_chance:
+        max_chance = min_chance
+
+    centered = 0.5 + (raw - 0.5) * shrinkage
+    return max(min_chance, min(max_chance, _clamp01(centered)))
+
+
 def _extract_class_scores(
     model,
     x_scaled,
@@ -145,7 +156,8 @@ def _compute_independent_chances_from_scores(
     out: dict[str, float] = {}
     for cls in config.MODEL_CLASSES:
         score = float(class_scores.get(cls, 0.0))
-        out[cls] = _clamp01(_sigmoid((score - bias) / temperature))
+        raw = _clamp01(_sigmoid((score - bias) / temperature))
+        out[cls] = _postprocess_chance(raw)
     return out
 
 

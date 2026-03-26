@@ -120,6 +120,9 @@ def test_independent_chance_not_normalized(monkeypatch):
 
     monkeypatch.setattr(config, "MODEL_CHANCE_LOGIT_TEMPERATURE", 1.0)
     monkeypatch.setattr(config, "MODEL_CHANCE_LOGIT_BIAS", 0.0)
+    monkeypatch.setattr(config, "MODEL_CHANCE_SHRINKAGE", 1.0)
+    monkeypatch.setattr(config, "MODEL_CHANCE_MIN", 0.0)
+    monkeypatch.setattr(config, "MODEL_CHANCE_MAX", 1.0)
 
     scores = {
         "normal": 0.8,
@@ -134,6 +137,27 @@ def test_independent_chance_not_normalized(monkeypatch):
     assert 0.0 <= out["depression"] <= 1.0
     assert out["stress"] > out["normal"] > out["anxiety"] > out["depression"]
     assert sum(out.values()) > 1.0
+
+
+def test_independent_chance_extreme_is_compressed(monkeypatch):
+    import config
+
+    monkeypatch.setattr(config, "MODEL_CHANCE_LOGIT_TEMPERATURE", 1.0)
+    monkeypatch.setattr(config, "MODEL_CHANCE_LOGIT_BIAS", 0.0)
+    monkeypatch.setattr(config, "MODEL_CHANCE_SHRINKAGE", 0.70)
+    monkeypatch.setattr(config, "MODEL_CHANCE_MIN", 0.03)
+    monkeypatch.setattr(config, "MODEL_CHANCE_MAX", 0.92)
+
+    scores = {
+        "normal": -10.0,
+        "anxiety": -3.0,
+        "stress": 20.0,
+        "depression": 8.0,
+    }
+    out = _compute_independent_chances_from_scores(scores)
+    assert out["stress"] <= 0.92
+    assert out["depression"] <= 0.92
+    assert out["normal"] >= 0.03
 
 
 def test_model_routes_exposed():
