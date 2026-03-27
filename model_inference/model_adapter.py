@@ -349,7 +349,8 @@ class ModelAdapter:
     ) -> dict:
         if self._load_error:
             return _unknown_payload(self._load_error)
-        if self._model is None or self._scaler is None:
+        scaler_required = bool(self.scaler_path)
+        if self._model is None or (scaler_required and self._scaler is None):
             return _unknown_payload("MODEL_NOT_READY")
 
         sensor_stale = bool(sensor_data.get("sensor_stale"))
