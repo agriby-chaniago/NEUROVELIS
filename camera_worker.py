@@ -1,6 +1,7 @@
 from picamera2 import Picamera2
 import cv2
 import sys
+import traceback
 
 import config
 
@@ -17,7 +18,20 @@ sharpness = float(getattr(config, "CAMERA_SHARPNESS", 1.0))
 brightness = float(getattr(config, "CAMERA_BRIGHTNESS", 0.0))
 mirror_horizontal = bool(getattr(config, "CAMERA_MIRROR_HORIZONTAL", True))
 
-picam2 = Picamera2(int(getattr(config, "CAMERA_LIBCAMERA_INDEX", 0)))
+requested_idx = int(getattr(config, "CAMERA_LIBCAMERA_INDEX", 0))
+available = Picamera2.global_camera_info()
+if not available:
+    raise RuntimeError(
+        "No camera detected by libcamera. Run 'rpicam-hello --list-cameras' and "
+        "check CSI ribbon/power/config first."
+    )
+if requested_idx < 0 or requested_idx >= len(available):
+    raise RuntimeError(
+        f"CAMERA_LIBCAMERA_INDEX={requested_idx} invalid; "
+        f"detected cameras={len(available)}"
+    )
+
+picam2 = Picamera2(requested_idx)
 video_config = picam2.create_video_configuration(
     main={"size": (width, height), "format": "RGB888"},
     controls={
@@ -71,6 +85,9 @@ try:
         sys.stdout.flush()
 except KeyboardInterrupt:
     pass
+except Exception:
+    traceback.print_exc(file=sys.stderr)
+    raise
 finally:
     try:
         picam2.stop()

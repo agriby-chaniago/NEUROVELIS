@@ -539,7 +539,7 @@ class CameraReader:
                         if stderr_preview:
                             self._error = (
                                 f"CAMERA_WORKER_EXITED(code={code}):"
-                                f"{stderr_preview[:240]}"
+                                f"{stderr_preview[:1200]}"
                             )
                         else:
                             self._error = f"CAMERA_WORKER_EXITED(code={code})"
