@@ -18,7 +18,8 @@ def _import_camera_stack():
 
         bad_paths = [
             p for p in list(sys.path)
-            if p.startswith("/usr/local/lib/python") and p.endswith("site-packages")
+            if p.startswith("/usr/local/lib/python")
+            and (p.endswith("site-packages") or p.endswith("dist-packages"))
         ]
         if not bad_paths:
             raise
