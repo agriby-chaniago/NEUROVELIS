@@ -8,3 +8,15 @@ __pycache__/
 dist/
 build/
 .pytest_cache/
+
+# Local Python environments
+.venv/
+venv/
+
+# Notebook/editor temp files
+.ipynb_checkpoints/
+.DS_Store
+
+# Runtime session outputs (keep directory structure only)
+data/sessions/*
+!data/sessions/.gitkeep
