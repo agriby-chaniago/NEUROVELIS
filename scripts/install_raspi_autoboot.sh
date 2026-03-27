@@ -18,6 +18,7 @@ fi
 
 resolve_python_bin() {
   local candidates=()
+  local arg_path="${1:-}"
 
   # Priority:
   # 1) First arg to script
@@ -25,8 +26,12 @@ resolve_python_bin() {
   # 3) PYTHON_BIN env
   # 4) Active VIRTUAL_ENV (if preserved with sudo -E)
   # 5) Common local venv paths
-  if [[ -n "${1:-}" ]]; then
-    candidates+=("$1")
+  if [[ -n "$arg_path" ]]; then
+    if [[ "$arg_path" == */bin/activate && -f "$arg_path" ]]; then
+      candidates+=("${arg_path%/activate}/python")
+    else
+      candidates+=("$arg_path")
+    fi
   fi
   if [[ -n "${VENV_PYTHON:-}" ]]; then
     candidates+=("$VENV_PYTHON")
@@ -56,6 +61,7 @@ resolve_python_bin() {
 }
 
 PYTHON_BIN="$(resolve_python_bin "${1:-}" || true)"
+VENV_ACTIVATE=""
 MAIN_PY="$PROJECT_DIR/main.py"
 KIOSK_SCRIPT="$PROJECT_DIR/scripts/open_model_kiosk.sh"
 SERVICE_FILE="/etc/systemd/system/neurosense.service"
@@ -67,10 +73,16 @@ KIOSK_LINE="@$KIOSK_SCRIPT http://127.0.0.1:5000/model http://127.0.0.1:5000/hea
 
 if [[ -z "${PYTHON_BIN:-}" || ! -x "$PYTHON_BIN" ]]; then
   echo "Python virtualenv executable not found." >&2
-  echo "Provide it explicitly, for example:" >&2
-  echo "  sudo bash scripts/install_raspi_autoboot.sh /home/$RUN_USER/neurosense-env/bin/python" >&2
+  echo "Provide venv path explicitly, for example:" >&2
+  echo "  sudo bash scripts/install_raspi_autoboot.sh /home/$RUN_USER/neurosense-env/bin/activate" >&2
   echo "Or via env var:" >&2
   echo "  sudo VENV_PYTHON=/home/$RUN_USER/neurosense-env/bin/python bash scripts/install_raspi_autoboot.sh" >&2
+  exit 1
+fi
+
+VENV_ACTIVATE="$(dirname "$PYTHON_BIN")/activate"
+if [[ ! -f "$VENV_ACTIVATE" ]]; then
+  echo "Virtualenv activate script not found: $VENV_ACTIVATE" >&2
   exit 1
 fi
 
@@ -94,7 +106,7 @@ Type=simple
 User=$RUN_USER
 Group=$RUN_USER
 WorkingDirectory=$PROJECT_DIR
-ExecStart=$PYTHON_BIN $MAIN_PY
+ExecStart=/bin/bash -lc 'source "$VENV_ACTIVATE" && exec python "$MAIN_PY"'
 Restart=on-failure
 RestartSec=5s
 Environment=PYTHONUNBUFFERED=1
@@ -139,6 +151,7 @@ chown -R "$RUN_USER:$RUN_USER" "$RUN_HOME/.config"
 echo ""
 echo "NEUROSENSE auto-boot setup complete."
 echo "- systemd service  : $SERVICE_FILE"
+echo "- venv activate    : $VENV_ACTIVATE"
 echo "- kiosk autostart  : $TARGET_AUTOSTART"
 echo "- desktop autostart: $DESKTOP_AUTOSTART_FILE"
 echo ""

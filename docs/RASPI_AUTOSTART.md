@@ -32,7 +32,7 @@ Jika venv berada di luar folder project, kirim path python venv secara eksplisit
 
 ```bash
 cd /home/neurosense/NEUROSENSE
-sudo bash scripts/install_raspi_autoboot.sh /home/neurosense/neurosense-env/bin/python
+sudo bash scripts/install_raspi_autoboot.sh /home/neurosense/neurosense-env/bin/activate
 ```
 
 Alternatif lewat environment variable:
