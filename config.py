@@ -199,6 +199,9 @@ CAMERA_MIRROR_HORIZONTAL = True
 # Default None = follow the same interpreter as the running service process.
 # Set explicit absolute path only if worker must use a different runtime.
 CAMERA_WORKER_PYTHON = None
+# Max wait time (seconds) for worker pipe activity before camera worker is
+# considered stalled and restarted.
+CAMERA_WORKER_FRAME_TIMEOUT_S = 12.0
 
 # R↔B channel swap.
 # OV64A40 (Arducam 64MP) via PiSP backend mengirim data BGR meskipun format

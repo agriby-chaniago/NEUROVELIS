@@ -21,6 +21,7 @@ threading.Condition until the next frame arrives (zero polling latency).
 import io
 import logging
 import queue
+import select
 import struct
 import subprocess
 import sys
@@ -179,14 +180,23 @@ class CameraReader:
     # ── Main capture loop ─────────────────────────────────────────────────
 
     def _capture_loop(self):
-        """Run camera capture through the system-python worker process."""
-        try:
-            self._loop_opencv()
-            return   # clean exit (stop() was called)
-        except Exception as exc:
-            if self._running:
-                self._error = str(exc)
-                logger.error("CameraReader: worker subprocess failed: %s", exc)
+        """Run camera capture through the worker subprocess with restart-on-fail."""
+        while self._running:
+            try:
+                self._loop_opencv()
+            except Exception as exc:
+                if self._running:
+                    self._error = str(exc)
+                    logger.error("CameraReader: worker subprocess failed: %s", exc)
+
+            if not self._running:
+                break
+
+            logger.warning(
+                "CameraReader: restarting worker subprocess in %.1fs",
+                _RESTART_DELAY_S,
+            )
+            time.sleep(_RESTART_DELAY_S)
 
     # ── picamera2 backend ─────────────────────────────────────────────────
 
@@ -486,11 +496,32 @@ class CameraReader:
             worker_python,
         )
 
+        frame_timeout_s = max(
+            2.0,
+            float(getattr(config, "CAMERA_WORKER_FRAME_TIMEOUT_S", 12.0)),
+        )
+
+        def _read_stderr_preview(limit: int = 2048) -> str:
+            if proc.stderr is None:
+                return ""
+            try:
+                raw = proc.stderr.read(limit)
+                return raw.decode("utf-8", errors="replace").strip()
+            except Exception:
+                return ""
+
         def _read_exact(size: int) -> Optional[bytes]:
             """Read exactly size bytes from worker stdout, or None on EOF."""
             chunks = []
             remaining = size
+            deadline = time.monotonic() + frame_timeout_s
             while remaining > 0:
+                wait_s = max(0.0, deadline - time.monotonic())
+                if wait_s <= 0.0:
+                    raise TimeoutError(f"CAMERA_WORKER_FRAME_TIMEOUT:{frame_timeout_s}s")
+                ready, _, _ = select.select([proc.stdout], [], [], wait_s)
+                if not ready:
+                    raise TimeoutError(f"CAMERA_WORKER_FRAME_TIMEOUT:{frame_timeout_s}s")
                 chunk = proc.stdout.read(remaining)
                 if not chunk:
                     return None
@@ -503,15 +534,7 @@ class CameraReader:
                 size_bytes = _read_exact(4)
                 if not size_bytes:
                     if self._running and proc.poll() is not None:
-                        stderr_preview = ""
-                        if proc.stderr is not None:
-                            try:
-                                stderr_raw = proc.stderr.read(2048)
-                                stderr_preview = stderr_raw.decode(
-                                    "utf-8", errors="replace"
-                                ).strip()
-                            except Exception:
-                                stderr_preview = ""
+                        stderr_preview = _read_stderr_preview()
                         code = proc.returncode
                         if stderr_preview:
                             self._error = (
@@ -537,6 +560,13 @@ class CameraReader:
                     self._frame_seq += 1
                     self._fps_timestamps.append(time.monotonic())
                     self._cond.notify_all()
+        except TimeoutError as exc:
+            self._error = str(exc)
+            logger.error("CameraReader: %s", self._error)
+            stderr_preview = _read_stderr_preview()
+            if stderr_preview:
+                logger.error("CameraReader worker stderr: %s", stderr_preview[:240])
+            raise
         finally:
             if proc.poll() is None:
                 proc.terminate()
@@ -545,3 +575,4 @@ class CameraReader:
                 except subprocess.TimeoutExpired:
                     proc.kill()
             self._worker_proc = None
+            self._backend = None
