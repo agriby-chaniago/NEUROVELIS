@@ -1,9 +1,44 @@
-from picamera2 import Picamera2
-import cv2
 import sys
 import traceback
 
 import config
+
+
+def _import_camera_stack():
+    """Import picamera2/cv2 with recovery for broken /usr/local libcamera shadowing."""
+    try:
+        from picamera2 import Picamera2 as _Picamera2
+        import cv2 as _cv2
+        return _Picamera2, _cv2
+    except ModuleNotFoundError as exc:
+        # Common on Raspberry Pi when stale /usr/local Python package shadows
+        # apt-managed python3-libcamera from /usr/lib/python3/dist-packages.
+        if exc.name != "libcamera._libcamera":
+            raise
+
+        bad_paths = [
+            p for p in list(sys.path)
+            if p.startswith("/usr/local/lib/python") and p.endswith("site-packages")
+        ]
+        if not bad_paths:
+            raise
+
+        for p in bad_paths:
+            try:
+                sys.path.remove(p)
+            except ValueError:
+                pass
+
+        # Clear possibly half-imported modules before retrying.
+        for mod in ("libcamera", "picamera2"):
+            sys.modules.pop(mod, None)
+
+        from picamera2 import Picamera2 as _Picamera2
+        import cv2 as _cv2
+        return _Picamera2, _cv2
+
+
+Picamera2, cv2 = _import_camera_stack()
 
 
 width = int(getattr(config, "CAMERA_STREAM_WIDTH", 640))

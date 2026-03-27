@@ -126,3 +126,25 @@ sudo systemctl restart neurosense.service
 ```bash
 journalctl -u neurosense.service -n 120 --no-pager
 ```
+
+### Jika Muncul `ModuleNotFoundError: libcamera._libcamera`
+
+Gejala khas:
+
+- `rpicam-hello --list-cameras` sudah OK
+- tetapi service gagal kamera dengan error Python `libcamera._libcamera`
+- traceback menunjuk ke `/usr/local/lib/python3.x/site-packages/libcamera`
+
+Ini biasanya karena sisa package `libcamera` dari instalasi manual di `/usr/local`
+menimpa package resmi `python3-libcamera` dari apt.
+
+Perbaikan cepat:
+
+```bash
+sudo mkdir -p /root/libcamera-py-backup
+sudo mv /usr/local/lib/python3.11/site-packages/libcamera* /root/libcamera-py-backup/ 2>/dev/null || true
+sudo mv /usr/local/lib/python3.11/dist-packages/libcamera* /root/libcamera-py-backup/ 2>/dev/null || true
+sudo apt install --reinstall python3-libcamera python3-picamera2
+sudo ldconfig
+sudo systemctl restart neurosense.service
+```
