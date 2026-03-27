@@ -33,6 +33,7 @@ class ModelInferenceService:
             backend=config.MODEL_INFERENCE_BACKEND,
             model_path=config.MODEL_INFERENCE_MODEL_PATH,
             scaler_path=config.MODEL_INFERENCE_SCALER_PATH,
+            features_path=getattr(config, "MODEL_INFERENCE_FEATURES_PATH", None),
         )
         self._visual_extractor = VisualFeatureExtractor(
             enabled=getattr(config, "MODEL_FACE_MESH_ENABLED", True),

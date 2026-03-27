@@ -9,6 +9,7 @@ available. Future backends (pytorch/onnx/tensorflow) can plug into the same
 from __future__ import annotations
 
 import math
+import pickle
 import joblib
 from dataclasses import dataclass
 from pathlib import Path
@@ -248,6 +249,7 @@ class ModelAdapter:
     backend: str = config.MODEL_INFERENCE_BACKEND
     model_path: Optional[str] = config.MODEL_INFERENCE_MODEL_PATH
     scaler_path: Optional[str] = config.MODEL_INFERENCE_SCALER_PATH
+    features_path: Optional[str] = getattr(config, "MODEL_INFERENCE_FEATURES_PATH", None)
 
     def __post_init__(self):
         self._model = None
@@ -275,21 +277,30 @@ class ModelAdapter:
 
     def _load_sklearn_artifacts(self):
         model_path = Path(self.model_path or "")
-        scaler_path = Path(self.scaler_path or "")
+        scaler_path = Path(self.scaler_path) if self.scaler_path else None
+        features_path = Path(self.features_path) if self.features_path else None
         if not model_path.exists():
             self._load_error = f"MODEL_FILE_NOT_FOUND:{model_path}"
             return
-        if not scaler_path.exists():
+        if scaler_path is not None and not scaler_path.exists():
             self._load_error = f"SCALER_FILE_NOT_FOUND:{scaler_path}"
             return
 
         try:
             self._model = joblib.load(model_path)
-            self._scaler = joblib.load(scaler_path)
+            self._scaler = joblib.load(scaler_path) if scaler_path is not None else None
             self._classes = [str(c) for c in getattr(self._model, "classes_", config.MODEL_CLASSES)]
-            self._feature_names = [
-                str(f) for f in getattr(self._scaler, "feature_names_in_", [])
-            ]
+            feature_names = []
+            if self._scaler is not None:
+                feature_names = [str(f) for f in getattr(self._scaler, "feature_names_in_", [])]
+            if not feature_names:
+                feature_names = [str(f) for f in getattr(self._model, "feature_names_in_", [])]
+            if not feature_names and features_path is not None and features_path.exists():
+                with features_path.open("rb") as fp:
+                    loaded_features = pickle.load(fp)
+                if isinstance(loaded_features, (list, tuple)):
+                    feature_names = [str(f) for f in loaded_features]
+            self._feature_names = feature_names
             self._load_error = None
         except ModuleNotFoundError as exc:
             self._load_error = f"SKLEARN_DEPENDENCY_MISSING:{exc}"
@@ -303,7 +314,7 @@ class ModelAdapter:
             "model_path": self.model_path,
             "scaler_path": self.scaler_path,
             "model_loaded": self._model is not None,
-            "scaler_loaded": self._scaler is not None,
+            "scaler_loaded": self._scaler is not None or not self.scaler_path,
             "load_error": self._load_error,
             "classes": list(self._classes),
             "feature_names": list(self._feature_names),
@@ -365,7 +376,7 @@ class ModelAdapter:
         names = self._feature_names or list(feature_vector.keys())
         try:
             x = [[float(feature_vector.get(name, 0.0)) for name in names]]
-            x_scaled = self._scaler.transform(x)
+            x_scaled = self._scaler.transform(x) if self._scaler is not None else x
             if hasattr(self._model, "predict_proba"):
                 proba = self._model.predict_proba(x_scaled)[0]
                 classes = self._classes

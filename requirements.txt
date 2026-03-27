@@ -18,7 +18,7 @@ Pillow>=10.0.0          # required for Arducam/picamera2 JPEG encoding
 opencv-python-headless>=4.9.0
 mediapipe>=0.10.14
 
-# ML inference runtime (for model_inference/artifacts/model.pkl + scaler.pkl)
+# ML inference runtime (for model_inference/artifacts/model.pkl + features.pkl)
 # IMPORTANT: If your model was trained with a specific scikit-learn version,
 # pin this to that exact version on Raspberry Pi for maximum pickle compatibility.
 scikit-learn>=1.4,<2

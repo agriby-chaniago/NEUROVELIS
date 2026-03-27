@@ -241,10 +241,12 @@ MODEL_INFERENCE_INTERVAL_S = 1.0
 MODEL_VISUAL_UPDATE_INTERVAL_S = 0.10
 MODEL_INFERENCE_TIMEOUT_MS = 800
 MODEL_INFERENCE_MODEL_PATH = os.path.join(
-    os.path.dirname(__file__), "model_inference", "artifacts", "model.joblib"
+    os.path.dirname(__file__), "model_inference", "artifacts", "model.pkl"
 )
-MODEL_INFERENCE_SCALER_PATH = os.path.join(
-    os.path.dirname(__file__), "model_inference", "artifacts", "scaler.joblib"
+# New RandomForest artifact is used directly without external scaler.
+MODEL_INFERENCE_SCALER_PATH = None
+MODEL_INFERENCE_FEATURES_PATH = os.path.join(
+    os.path.dirname(__file__), "model_inference", "artifacts", "features.pkl"
 )
 MODEL_INFERENCE_MIN_POINTS = 8
 # Feature extraction window for model input (seconds).

@@ -15,8 +15,8 @@ This document covers deployment for the realtime 4-class model dashboard.
 
 Place artifacts at:
 
-- `model_inference/artifacts/model.joblib`
-- `model_inference/artifacts/scaler.joblib`
+- `model_inference/artifacts/model.pkl`
+- `model_inference/artifacts/features.pkl`
 - `model_inference/artifacts/face_landmarker.task`
 
 ## Required Dependencies
@@ -36,6 +36,7 @@ Install from `requirements.txt` on the target device:
 - `MODEL_INFERENCE_BACKEND`
 - `MODEL_INFERENCE_MODEL_PATH`
 - `MODEL_INFERENCE_SCALER_PATH`
+- `MODEL_INFERENCE_FEATURES_PATH`
 - `MODEL_INFERENCE_INTERVAL_S`
 - `MODEL_INFERENCE_MIN_POINTS`
 - `MODEL_ALERT_CONFIDENCE_THRESHOLD`
