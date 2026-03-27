@@ -196,8 +196,9 @@ CAMERA_AUTOFOCUS     = True
 CAMERA_MIRROR_HORIZONTAL = True
 
 # Python executable used by camera_worker.py subprocess.
-# Default None = follow the same interpreter as the running service process.
-# Set explicit absolute path only if worker must use a different runtime.
+# Default None = auto-select interpreter that can import picamera2+cv2
+# (tries current runtime first, then /usr/bin/python3 on Raspberry Pi).
+# Set explicit absolute path only if worker must use a specific runtime.
 CAMERA_WORKER_PYTHON = None
 # Max wait time (seconds) for worker pipe activity before camera worker is
 # considered stalled and restarted.

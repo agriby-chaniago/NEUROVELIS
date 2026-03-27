@@ -95,3 +95,34 @@ ls -l ~/.config/autostart/neurosense-kiosk.desktop
 
 1. Jika popup keyring minta password terus muncul, atur keyring agar tidak meminta
    password saat boot (misalnya lewat aplikasi Passwords and Keys / Seahorse).
+
+### Troubleshooting Kamera Terdeteksi di OS, Tapi Tidak di App Saat Boot
+
+Gejala umum:
+
+- `rpicam-hello --list-cameras` menampilkan kamera
+- dashboard menampilkan kamera tidak tersedia / model sering `NO_CAMERA`
+- masalah muncul setelah service systemd aktif
+
+Penyebab paling umum: service berjalan di virtualenv yang tidak memiliki
+`picamera2` (paket ini biasanya terpasang di system Python via apt).
+
+Solusi:
+
+1. Set interpreter worker kamera ke system Python di `config.py`:
+
+```python
+CAMERA_WORKER_PYTHON = "/usr/bin/python3"
+```
+
+1. Restart service:
+
+```bash
+sudo systemctl restart neurosense.service
+```
+
+1. Verifikasi log:
+
+```bash
+journalctl -u neurosense.service -n 120 --no-pager
+```

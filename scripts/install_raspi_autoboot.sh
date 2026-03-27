@@ -98,13 +98,14 @@ fi
 cat > "$SERVICE_FILE" <<EOF
 [Unit]
 Description=NEUROSENSE Sensor Data Collection & Dashboard
-After=network-online.target
-Wants=network-online.target
+After=network-online.target systemd-udev-settle.service
+Wants=network-online.target systemd-udev-settle.service
 
 [Service]
 Type=simple
 User=$RUN_USER
 Group=$RUN_USER
+SupplementaryGroups=video render
 WorkingDirectory=$PROJECT_DIR
 ExecStart=/bin/bash -lc 'source "$VENV_ACTIVATE" && exec python "$MAIN_PY"'
 Restart=on-failure

@@ -558,24 +558,42 @@ loadMeshTopology().then(connectMeshStream);
 
 const camStatus = document.getElementById("camera-status");
 const camSection = document.getElementById("camera-section");
+const CAMERA_RETRY_MS = 2500;
+let cameraRetryTimer = null;
+
+function scheduleCameraRetry() {
+  if (cameraRetryTimer !== null) return;
+  cameraRetryTimer = window.setTimeout(() => {
+    cameraRetryTimer = null;
+    const feed = document.getElementById("camera-feed");
+    if (!feed) return;
+    feed.style.display = "";
+    feed.src = `/camera/stream?t=${Date.now()}`;
+  }, CAMERA_RETRY_MS);
+}
 
 function onCameraLoad() {
+  if (cameraRetryTimer !== null) {
+    window.clearTimeout(cameraRetryTimer);
+    cameraRetryTimer = null;
+  }
   if (camStatus) {
     camStatus.textContent = "Live";
     camStatus.className = "";
   }
+  if (camSection) camSection.style.display = "";
   syncMeshCanvasSize();
 }
 
 function onCameraError() {
   if (camStatus) {
-    camStatus.textContent = "Camera not available";
+    camStatus.textContent = "Camera unavailable - retrying...";
     camStatus.className = "error";
   }
   clearMeshOverlay();
   const feed = document.getElementById("camera-feed");
   if (feed) feed.style.display = "none";
-  if (camSection) camSection.style.display = "none";
+  scheduleCameraRetry();
 }
 
 window.addEventListener("resize", syncMeshCanvasSize);

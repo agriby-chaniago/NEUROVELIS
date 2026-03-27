@@ -1,11 +1,13 @@
 [Unit]
 Description=NEUROSENSE Sensor Data Collection & Dashboard
-After=network.target
-Wants=network.target
+After=network-online.target systemd-udev-settle.service
+Wants=network-online.target systemd-udev-settle.service
 
 [Service]
 Type=simple
 User=pi
+Group=pi
+SupplementaryGroups=video render
 WorkingDirectory=/home/pi/neurosense
 # Activate virtual environment first, then run app with that python.
 # NOTE: update path to your actual activate script.

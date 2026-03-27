@@ -20,6 +20,7 @@ threading.Condition until the next frame arrives (zero polling latency).
 
 import io
 import logging
+import os
 import queue
 import select
 import struct
@@ -470,11 +471,55 @@ class CameraReader:
             raise RuntimeError(f"Camera worker file not found: {worker_path}")
 
         worker_python_cfg = getattr(config, "CAMERA_WORKER_PYTHON", None)
-        worker_python = (
-            str(worker_python_cfg).strip()
-            if worker_python_cfg
-            else sys.executable
-        )
+
+        def _python_can_import_camera_stack(python_bin: str) -> bool:
+            """True when interpreter can import mandatory camera worker deps."""
+            try:
+                probe = subprocess.run(
+                    [python_bin, "-c", "import picamera2, cv2"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=3,
+                    check=False,
+                )
+                return probe.returncode == 0
+            except Exception:
+                return False
+
+        worker_python: Optional[str] = None
+        if worker_python_cfg:
+            worker_python = str(worker_python_cfg).strip()
+            if not worker_python:
+                worker_python = None
+
+        if worker_python is None:
+            candidates = []
+            if sys.executable:
+                candidates.append(sys.executable)
+            if "/usr/bin/python3" not in candidates:
+                candidates.append("/usr/bin/python3")
+
+            for candidate in candidates:
+                if not os.path.isfile(candidate) or not os.access(candidate, os.X_OK):
+                    continue
+                if _python_can_import_camera_stack(candidate):
+                    worker_python = candidate
+                    break
+
+        if worker_python is None:
+            worker_python = sys.executable
+            logger.warning(
+                "CameraReader: no interpreter with picamera2+cv2 detected; "
+                "fallback to current interpreter (%s)",
+                worker_python,
+            )
+        elif worker_python != sys.executable and not worker_python_cfg:
+            logger.warning(
+                "CameraReader: current interpreter (%s) lacks camera deps; "
+                "using worker interpreter %s",
+                sys.executable,
+                worker_python,
+            )
 
         proc = subprocess.Popen(
             [worker_python, "camera_worker.py"],
@@ -501,10 +546,13 @@ class CameraReader:
             float(getattr(config, "CAMERA_WORKER_FRAME_TIMEOUT_S", 12.0)),
         )
 
-        def _read_stderr_preview(limit: int = 2048) -> str:
+        def _read_stderr_preview(limit: int = 2048, wait_s: float = 0.05) -> str:
             if proc.stderr is None:
                 return ""
             try:
+                ready, _, _ = select.select([proc.stderr], [], [], wait_s)
+                if not ready:
+                    return ""
                 raw = proc.stderr.read(limit)
                 return raw.decode("utf-8", errors="replace").strip()
             except Exception:
@@ -534,7 +582,7 @@ class CameraReader:
                 size_bytes = _read_exact(4)
                 if not size_bytes:
                     if self._running and proc.poll() is not None:
-                        stderr_preview = _read_stderr_preview()
+                        stderr_preview = _read_stderr_preview(wait_s=0.2)
                         code = proc.returncode
                         if stderr_preview:
                             self._error = (
