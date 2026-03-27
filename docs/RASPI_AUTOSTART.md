@@ -47,6 +47,8 @@ Script ini otomatis:
 - membuat `/etc/systemd/system/neurosense.service`
 - `enable` + `start` service
 - menambahkan autostart Chromium kiosk untuk `/model`
+  pada `~/.config/lxsession/LXDE-pi/autostart` (legacy)
+  dan `~/.config/autostart/neurosense-kiosk.desktop` (XDG desktop autostart)
 
 ## Cek Status
 
@@ -70,3 +72,24 @@ Saat boot sukses:
 
 - Jika mode kiosk tidak terbuka, pastikan Anda login ke sesi desktop (GUI).
 - Jika backend lambat start, script kiosk menunggu endpoint `/health` sebelum membuka `/model`.
+- Jika diminta password saat startup, biasanya itu karena desktop belum auto-login
+  atau keyring Chromium masih terkunci.
+
+### Troubleshooting Saat Reboot Tidak Auto-Buka Browser
+
+1. Aktifkan desktop auto-login:
+
+```bash
+sudo raspi-config
+```
+
+Pilih: `System Options` → `Boot / Auto Login` → `Desktop Autologin`.
+
+1. Cek file autostart terpasang:
+
+```bash
+ls -l ~/.config/autostart/neurosense-kiosk.desktop
+```
+
+1. Jika popup keyring minta password terus muncul, atur keyring agar tidak meminta
+   password saat boot (misalnya lewat aplikasi Passwords and Keys / Seahorse).

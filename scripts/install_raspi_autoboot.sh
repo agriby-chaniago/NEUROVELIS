@@ -61,6 +61,8 @@ KIOSK_SCRIPT="$PROJECT_DIR/scripts/open_model_kiosk.sh"
 SERVICE_FILE="/etc/systemd/system/neurosense.service"
 AUTOSTART_FILE="/etc/xdg/lxsession/LXDE-pi/autostart"
 USER_AUTOSTART_FILE="$RUN_HOME/.config/lxsession/LXDE-pi/autostart"
+DESKTOP_AUTOSTART_DIR="$RUN_HOME/.config/autostart"
+DESKTOP_AUTOSTART_FILE="$DESKTOP_AUTOSTART_DIR/neurosense-kiosk.desktop"
 KIOSK_LINE="@$KIOSK_SCRIPT http://127.0.0.1:5000/model http://127.0.0.1:5000/health"
 
 if [[ -z "${PYTHON_BIN:-}" || ! -x "$PYTHON_BIN" ]]; then
@@ -121,10 +123,24 @@ if ! grep -Fqx "$KIOSK_LINE" "$TARGET_AUTOSTART"; then
   echo "$KIOSK_LINE" >> "$TARGET_AUTOSTART"
 fi
 
+mkdir -p "$DESKTOP_AUTOSTART_DIR"
+cat > "$DESKTOP_AUTOSTART_FILE" <<EOF
+[Desktop Entry]
+Type=Application
+Name=NEUROSENSE Kiosk
+Comment=Open NEUROSENSE /model dashboard in kiosk mode
+Exec=$KIOSK_SCRIPT http://127.0.0.1:5000/model http://127.0.0.1:5000/health
+Terminal=false
+X-GNOME-Autostart-enabled=true
+EOF
+
+chown -R "$RUN_USER:$RUN_USER" "$RUN_HOME/.config"
+
 echo ""
 echo "NEUROSENSE auto-boot setup complete."
 echo "- systemd service  : $SERVICE_FILE"
 echo "- kiosk autostart  : $TARGET_AUTOSTART"
+echo "- desktop autostart: $DESKTOP_AUTOSTART_FILE"
 echo ""
 echo "Check service status with:"
 echo "  sudo systemctl status neurosense.service"
