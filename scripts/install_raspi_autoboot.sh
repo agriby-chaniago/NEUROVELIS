@@ -16,7 +16,46 @@ if [[ -z "$RUN_HOME" ]]; then
   exit 1
 fi
 
-PYTHON_BIN="$PROJECT_DIR/.venv/bin/python"
+resolve_python_bin() {
+  local candidates=()
+
+  # Priority:
+  # 1) First arg to script
+  # 2) VENV_PYTHON env
+  # 3) PYTHON_BIN env
+  # 4) Active VIRTUAL_ENV (if preserved with sudo -E)
+  # 5) Common local venv paths
+  if [[ -n "${1:-}" ]]; then
+    candidates+=("$1")
+  fi
+  if [[ -n "${VENV_PYTHON:-}" ]]; then
+    candidates+=("$VENV_PYTHON")
+  fi
+  if [[ -n "${PYTHON_BIN:-}" ]]; then
+    candidates+=("$PYTHON_BIN")
+  fi
+  if [[ -n "${VIRTUAL_ENV:-}" ]]; then
+    candidates+=("$VIRTUAL_ENV/bin/python")
+  fi
+
+  candidates+=(
+    "$PROJECT_DIR/.venv/bin/python"
+    "$RUN_HOME/neurosense-env/bin/python"
+    "$RUN_HOME/.venv/bin/python"
+  )
+
+  local py
+  for py in "${candidates[@]}"; do
+    if [[ -x "$py" ]]; then
+      echo "$py"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+PYTHON_BIN="$(resolve_python_bin "${1:-}" || true)"
 MAIN_PY="$PROJECT_DIR/main.py"
 KIOSK_SCRIPT="$PROJECT_DIR/scripts/open_model_kiosk.sh"
 SERVICE_FILE="/etc/systemd/system/neurosense.service"
@@ -24,10 +63,12 @@ AUTOSTART_FILE="/etc/xdg/lxsession/LXDE-pi/autostart"
 USER_AUTOSTART_FILE="$RUN_HOME/.config/lxsession/LXDE-pi/autostart"
 KIOSK_LINE="@$KIOSK_SCRIPT http://127.0.0.1:5000/model http://127.0.0.1:5000/health"
 
-if [[ ! -x "$PYTHON_BIN" ]]; then
-  echo "Python venv executable not found: $PYTHON_BIN" >&2
-  echo "Create venv first, for example:" >&2
-  echo "  python3 -m venv .venv && .venv/bin/pip install -r requirements.txt" >&2
+if [[ -z "${PYTHON_BIN:-}" || ! -x "$PYTHON_BIN" ]]; then
+  echo "Python virtualenv executable not found." >&2
+  echo "Provide it explicitly, for example:" >&2
+  echo "  sudo bash scripts/install_raspi_autoboot.sh /home/$RUN_USER/neurosense-env/bin/python" >&2
+  echo "Or via env var:" >&2
+  echo "  sudo VENV_PYTHON=/home/$RUN_USER/neurosense-env/bin/python bash scripts/install_raspi_autoboot.sh" >&2
   exit 1
 fi
 

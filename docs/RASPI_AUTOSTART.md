@@ -9,7 +9,7 @@ Dokumen ini membuat Raspberry Pi otomatis:
 
 - Raspberry Pi OS Desktop (agar browser bisa auto-open)
 - Project sudah ada di Raspberry Pi (contoh: `/home/pi/NEUROSENSE`)
-- Virtual environment `.venv` sudah dibuat dan dependency sudah terpasang
+- Virtual environment sudah dibuat dan dependency sudah terpasang
 
 Contoh install dependency:
 
@@ -26,6 +26,20 @@ Dari folder project di Raspberry Pi:
 ```bash
 cd /home/pi/NEUROSENSE
 sudo bash scripts/install_raspi_autoboot.sh
+```
+
+Jika venv berada di luar folder project, kirim path python venv secara eksplisit:
+
+```bash
+cd /home/neurosense/NEUROSENSE
+sudo bash scripts/install_raspi_autoboot.sh /home/neurosense/neurosense-env/bin/python
+```
+
+Alternatif lewat environment variable:
+
+```bash
+cd /home/neurosense/NEUROSENSE
+sudo VENV_PYTHON=/home/neurosense/neurosense-env/bin/python bash scripts/install_raspi_autoboot.sh
 ```
 
 Script ini otomatis:
