@@ -72,8 +72,10 @@ Saat boot sukses:
 
 - Jika mode kiosk tidak terbuka, pastikan Anda login ke sesi desktop (GUI).
 - Jika backend lambat start, script kiosk menunggu endpoint `/health` sebelum membuka `/model`.
-- Jika diminta password saat startup, biasanya itu karena desktop belum auto-login
-  atau keyring Chromium masih terkunci.
+- Launcher kiosk sudah menjalankan Chromium dengan `--password-store=basic`
+  agar popup unlock keyring tidak muncul.
+- Jika tetap diminta password saat startup, biasanya desktop belum auto-login
+  atau keyring Chromium masih terkunci dari konfigurasi lama.
 
 ### Troubleshooting Saat Reboot Tidak Auto-Buka Browser
 

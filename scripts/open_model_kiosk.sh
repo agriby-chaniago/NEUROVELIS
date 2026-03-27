@@ -49,6 +49,10 @@ wait_for_backend
 exec "$BROWSER_BIN" \
   --kiosk \
   --incognito \
+  --no-first-run \
+  --disable-sync \
   --noerrdialogs \
   --disable-infobars \
+  --password-store=basic \
+  --disable-features=PasswordManagerOnboarding \
   "$MODEL_URL"
