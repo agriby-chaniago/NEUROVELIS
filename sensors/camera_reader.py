@@ -23,6 +23,7 @@ import logging
 import queue
 import struct
 import subprocess
+import sys
 import threading
 import time
 from collections import deque
@@ -458,7 +459,12 @@ class CameraReader:
         if not worker_path.exists():
             raise RuntimeError(f"Camera worker file not found: {worker_path}")
 
-        worker_python = str(getattr(config, "CAMERA_WORKER_PYTHON", "/usr/bin/python3"))
+        worker_python_cfg = getattr(config, "CAMERA_WORKER_PYTHON", None)
+        worker_python = (
+            str(worker_python_cfg).strip()
+            if worker_python_cfg
+            else sys.executable
+        )
 
         proc = subprocess.Popen(
             [worker_python, "camera_worker.py"],

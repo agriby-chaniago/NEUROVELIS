@@ -196,9 +196,9 @@ CAMERA_AUTOFOCUS     = True
 CAMERA_MIRROR_HORIZONTAL = True
 
 # Python executable used by camera_worker.py subprocess.
-# Keep this as system Python on Raspberry Pi because picamera2/libcamera
-# is commonly installed via apt for /usr/bin/python3, not inside project venv.
-CAMERA_WORKER_PYTHON = "/usr/bin/python3"
+# Default None = follow the same interpreter as the running service process.
+# Set explicit absolute path only if worker must use a different runtime.
+CAMERA_WORKER_PYTHON = None
 
 # R↔B channel swap.
 # OV64A40 (Arducam 64MP) via PiSP backend mengirim data BGR meskipun format
