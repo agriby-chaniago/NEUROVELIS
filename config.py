@@ -195,6 +195,11 @@ CAMERA_AUTOFOCUS     = True
 # Mirror horizontal untuk preview/dashboard (selfie view).
 CAMERA_MIRROR_HORIZONTAL = True
 
+# Python executable used by camera_worker.py subprocess.
+# Keep this as system Python on Raspberry Pi because picamera2/libcamera
+# is commonly installed via apt for /usr/bin/python3, not inside project venv.
+CAMERA_WORKER_PYTHON = "/usr/bin/python3"
+
 # R↔B channel swap.
 # OV64A40 (Arducam 64MP) via PiSP backend mengirim data BGR meskipun format
 # yang diminta RGB888 — ini bug/quirk driver libcamera + PiSP.

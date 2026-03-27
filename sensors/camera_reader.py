@@ -23,7 +23,6 @@ import logging
 import queue
 import struct
 import subprocess
-import sys
 import threading
 import time
 from collections import deque
@@ -166,9 +165,11 @@ class CameraReader:
 
     def health(self) -> dict:
         fps = self.fps
+        ready = self.ready
         return {
             "sensor":  "camera",
-            "ok":      self._backend is not None and self._error is None,
+            "ok":      self._backend is not None and self._error is None and ready,
+            "ready":   ready,
             "backend": self._backend,
             "fps":     round(fps, 1) if fps is not None else None,
             "error":   self._error,
@@ -457,9 +458,12 @@ class CameraReader:
         if not worker_path.exists():
             raise RuntimeError(f"Camera worker file not found: {worker_path}")
 
+        worker_python = str(getattr(config, "CAMERA_WORKER_PYTHON", "/usr/bin/python3"))
+
         proc = subprocess.Popen(
-            [sys.executable, "camera_worker.py"],
+            [worker_python, "camera_worker.py"],
             stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             cwd=str(worker_path.parent),
             bufsize=0,
         )
@@ -473,7 +477,7 @@ class CameraReader:
         logger.info(
             "CameraReader: worker subprocess started (%s via %s)",
             worker_path,
-            sys.executable,
+            worker_python,
         )
 
         def _read_exact(size: int) -> Optional[bytes]:
@@ -492,6 +496,25 @@ class CameraReader:
             while self._running:
                 size_bytes = _read_exact(4)
                 if not size_bytes:
+                    if self._running and proc.poll() is not None:
+                        stderr_preview = ""
+                        if proc.stderr is not None:
+                            try:
+                                stderr_raw = proc.stderr.read(2048)
+                                stderr_preview = stderr_raw.decode(
+                                    "utf-8", errors="replace"
+                                ).strip()
+                            except Exception:
+                                stderr_preview = ""
+                        code = proc.returncode
+                        if stderr_preview:
+                            self._error = (
+                                f"CAMERA_WORKER_EXITED(code={code}):"
+                                f"{stderr_preview[:240]}"
+                            )
+                        else:
+                            self._error = f"CAMERA_WORKER_EXITED(code={code})"
+                        logger.error("CameraReader: %s", self._error)
                     break
 
                 size = struct.unpack(">I", size_bytes)[0]
