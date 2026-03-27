@@ -199,7 +199,7 @@ CAMERA_MIRROR_HORIZONTAL = True
 # Default None = auto-select interpreter that can import picamera2+cv2
 # (tries current runtime first, then /usr/bin/python3 on Raspberry Pi).
 # Set explicit absolute path only if worker must use a specific runtime.
-CAMERA_WORKER_PYTHON = None
+CAMERA_WORKER_PYTHON = "/usr/bin/python3"
 # Max wait time (seconds) for worker pipe activity before camera worker is
 # considered stalled and restarted.
 CAMERA_WORKER_FRAME_TIMEOUT_S = 12.0
