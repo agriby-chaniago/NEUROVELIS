@@ -275,33 +275,6 @@ MODEL_UNKNOWN_ON_MISSING_DATA = True
 # Tuned for moderate model accuracy (~55%) so alerts stay useful but not too sparse.
 MODEL_ALERT_CONFIDENCE_THRESHOLD = 0.68
 
-# Enable uncertainty gate so low-certainty outputs are marked UNCERTAIN
-# instead of forcing a potentially misleading class label.
-MODEL_ENABLE_UNCERTAIN_GATE = True
-
-# Minimum top-1 probability required for a final class decision.
-# 0.60 keeps guard active while avoiding excessive UNCERTAIN in moderate-accuracy models.
-MODEL_UNCERTAIN_MIN_TOP1_CONF = 0.60
-
-# Minimum top-1 minus top-2 probability gap required for class separation.
-# 0.12 is a balanced separation threshold for noisy realtime signals.
-MODEL_UNCERTAIN_MIN_MARGIN = 0.12
-
-# Validation-set accuracy reference for runtime confidence sanity checks.
-# This does not retrain or recalibrate the model; it is used only as a guardrail.
-MODEL_VALIDATION_ACCURACY = 0.55
-
-# If enabled, very high top-1 confidence can still be flagged UNCERTAIN when it
-# is implausible relative to known model quality.
-MODEL_UNCERTAIN_OVERCONFIDENCE_GUARD = True
-
-# Absolute extreme-confidence trigger (e.g. 1.0).
-MODEL_UNCERTAIN_MAX_TOP1_CONF = 0.98
-
-# Additional trigger based on gap between top-1 confidence and known accuracy.
-# Example with accuracy 0.55: top-1 >= 0.90 triggers this guard.
-MODEL_UNCERTAIN_MAX_ACC_GAP = 0.35
-
 # EMA smoothing for class probabilities (0<alpha<=1). Lower = smoother.
 MODEL_SMOOTHING_ALPHA = 0.30
 

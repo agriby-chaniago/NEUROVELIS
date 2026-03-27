@@ -84,17 +84,6 @@ def _unknown_payload(reason: str) -> dict:
     }
 
 
-def _decision_classes() -> list[str]:
-    if bool(getattr(config, "MODEL_EXCLUDE_NORMAL_CLASS", False)):
-        return ["anxiety", "stress", "depression"]
-    return list(config.MODEL_CLASSES)
-
-
-def _validation_accuracy() -> float:
-    acc = float(getattr(config, "MODEL_VALIDATION_ACCURACY", 1.0))
-    return max(0.0, min(1.0, acc))
-
-
 def _sigmoid(value: float) -> float:
     if value >= 0:
         z = math.exp(-value)
@@ -180,66 +169,6 @@ def _compute_independent_chances(
     if not scores:
         return fallback
     return _compute_independent_chances_from_scores(scores)
-
-
-def _apply_uncertainty_guard(result: dict) -> dict:
-    """Mark output as uncertain when top-1 confidence/separation is weak."""
-    if not bool(getattr(config, "MODEL_ENABLE_UNCERTAIN_GATE", True)):
-        return result
-
-    label = str(result.get("model_label_top1") or "").lower()
-    decision_classes = _decision_classes()
-    if label not in decision_classes:
-        return result
-
-    probs = {
-        cls: max(0.0, float(result.get(f"model_probs_{cls}", 0.0) or 0.0))
-        for cls in decision_classes
-    }
-    ranked = sorted(probs.items(), key=lambda kv: kv[1], reverse=True)
-    if not ranked:
-        return result
-
-    top1_label, top1_prob = ranked[0]
-    top2_prob = ranked[1][1] if len(ranked) > 1 else 0.0
-    margin = max(0.0, top1_prob - top2_prob)
-
-    min_top1 = max(0.0, float(getattr(config, "MODEL_UNCERTAIN_MIN_TOP1_CONF", 0.65)))
-    min_margin = max(0.0, float(getattr(config, "MODEL_UNCERTAIN_MIN_MARGIN", 0.15)))
-    enable_overconf = bool(getattr(config, "MODEL_UNCERTAIN_OVERCONFIDENCE_GUARD", True))
-    max_top1 = max(0.0, min(1.0, float(getattr(config, "MODEL_UNCERTAIN_MAX_TOP1_CONF", 0.98))))
-    max_acc_gap = max(0.0, float(getattr(config, "MODEL_UNCERTAIN_MAX_ACC_GAP", 0.35)))
-    val_acc = _validation_accuracy()
-
-    reasons = []
-    if top1_prob < min_top1:
-        reasons.append(f"LOW_CONF:{round(top1_prob, 3)}<{round(min_top1, 3)}")
-    if margin < min_margin:
-        reasons.append(f"LOW_MARGIN:{round(margin, 3)}<{round(min_margin, 3)}")
-    if enable_overconf:
-        if top1_prob >= max_top1:
-            reasons.append(f"OVERCONF_ABS:{round(top1_prob, 3)}>={round(max_top1, 3)}")
-        if (top1_prob - val_acc) >= max_acc_gap:
-            reasons.append(
-                f"OVERCONF_ACC_GAP:{round(top1_prob - val_acc, 3)}>={round(max_acc_gap, 3)}"
-            )
-
-    if not reasons:
-        return result
-
-    guarded = dict(result)
-    guarded["model_label_top1"] = "uncertain"
-    guarded["model_confidence_top1"] = None
-    guarded["model_confidence_raw_top1"] = round(top1_prob, 6)
-    guarded["model_label_raw_top1"] = top1_label
-    guarded["model_alert_active"] = False
-    guarded["model_alert_reasons"] = (
-        "UNCERTAIN:"
-        + "|".join(reasons)
-        + f"|TOP1={top1_label.upper()}({round(top1_prob, 3)})"
-        + f"|TOP2={round(top2_prob, 3)}"
-    )
-    return guarded
 
 
 @dataclass
@@ -376,8 +305,20 @@ class ModelAdapter:
 
         names = self._feature_names or list(feature_vector.keys())
         try:
-            x = [[float(feature_vector.get(name, 0.0)) for name in names]]
-            x_scaled = self._scaler.transform(x) if self._scaler is not None else x
+            x_row = []
+            for name in names:
+                raw = feature_vector.get(name, 0.0)
+                try:
+                    val = float(raw)
+                except (TypeError, ValueError):
+                    val = 0.0
+                if not math.isfinite(val):
+                    val = 0.0
+                x_row.append(val)
+
+            x_input = np.asarray([x_row], dtype=float)
+            x_scaled = self._scaler.transform(x_input) if self._scaler is not None else x_input
+            x_scaled = np.nan_to_num(x_scaled, nan=0.0, posinf=0.0, neginf=0.0)
             if hasattr(self._model, "predict_proba"):
                 proba = self._model.predict_proba(x_scaled)[0]
                 classes = self._classes
@@ -436,7 +377,7 @@ class ModelAdapter:
                     else ""
                 ),
             }
-            return _apply_uncertainty_guard(result)
+            return result
         except Exception as exc:
             return _unknown_payload(f"MODEL_PREDICT_ERROR:{exc}")
 
@@ -511,4 +452,4 @@ def _predict_rule_based(sensor_data: dict, frame_bytes: Optional[bytes]) -> dict
             else ""
         ),
     }
-    return _apply_uncertainty_guard(result)
+    return result

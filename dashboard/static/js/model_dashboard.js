@@ -431,11 +431,6 @@ function updateSignalStatus(data) {
     setText("val-state", "DEGRADED");
     return;
   }
-  if (label === "uncertain") {
-    setText("val-signal", "OK");
-    setText("val-state", "UNCERTAIN");
-    return;
-  }
   setText("val-signal", "OK");
   setText("val-state", "RUNNING");
 }

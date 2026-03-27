@@ -477,6 +477,33 @@ class ModelInferenceService:
         return out.tolist()
 
     @staticmethod
+    def _interpolate_signal(values: list[Optional[float]]) -> list[float]:
+        """Fill small missing gaps using linear interpolation."""
+        if not values:
+            return []
+        normalized: list[float] = []
+        for v in values:
+            try:
+                f = float(v) if v is not None else float("nan")
+            except (TypeError, ValueError):
+                f = float("nan")
+            normalized.append(f if np.isfinite(f) else float("nan"))
+        arr = np.asarray(
+            normalized,
+            dtype=float,
+        )
+        valid = np.isfinite(arr)
+        if valid.sum() == 0:
+            return []
+
+        idx = np.arange(arr.size, dtype=float)
+        if valid.sum() == 1:
+            arr[~valid] = float(arr[valid][0])
+        else:
+            arr[~valid] = np.interp(idx[~valid], idx[valid], arr[valid])
+        return arr.tolist()
+
+    @staticmethod
     def _moving_average(signal: list[float], window_size: int) -> list[float]:
         if not signal:
             return []
@@ -614,12 +641,28 @@ class ModelInferenceService:
         if window_coverage_ratio < min_coverage:
             return None
 
-        hr_values = [float(r["hr"]) for r in recent_rows if r["hr"] is not None]
-        gsr_values = [float(r["gsr"]) for r in recent_rows if r["gsr"] is not None]
-        spo2_values = [float(r["spo2"]) for r in recent_rows if r["spo2"] is not None]
-        ear_values = [float(r["ear"]) for r in recent_rows if r["ear"] is not None]
-        mar_values = [float(r["mar"]) for r in recent_rows if r["mar"] is not None]
-        motion_values = [float(r["motion"]) for r in recent_rows if r["motion"] is not None]
+        hr_values = self._interpolate_signal([r.get("hr") for r in recent_rows])
+        gsr_values = self._interpolate_signal([r.get("gsr") for r in recent_rows])
+        spo2_values = [
+            float(r["spo2"])
+            for r in recent_rows
+            if r["spo2"] is not None and np.isfinite(float(r["spo2"]))
+        ]
+        ear_values = [
+            float(r["ear"])
+            for r in recent_rows
+            if r["ear"] is not None and np.isfinite(float(r["ear"]))
+        ]
+        mar_values = [
+            float(r["mar"])
+            for r in recent_rows
+            if r["mar"] is not None and np.isfinite(float(r["mar"]))
+        ]
+        motion_values = [
+            float(r["motion"])
+            for r in recent_rows
+            if r["motion"] is not None and np.isfinite(float(r["motion"]))
+        ]
 
         if len(hr_values) < min_points or len(gsr_values) < min_points:
             return None
@@ -675,8 +718,13 @@ class ModelInferenceService:
         motion_mean = self._mean(motion_values)
         motion_std = self._std(motion_values)
 
-        blink_count = sum(float(r.get("blink_event", 0.0) or 0.0) for r in recent_rows)
-        blink_rate = (blink_count * 60.0) / window_seconds
+        blink_count = sum(
+            float(r.get("blink_event", 0.0) or 0.0)
+            for r in recent_rows
+            if np.isfinite(float(r.get("blink_event", 0.0) or 0.0))
+        )
+        # Keep blink_rate semantics aligned with training notebook (blinks/second).
+        blink_rate = blink_count / window_seconds
 
         eda_tonic_mean = self._mean(tonic_values)
         eda_phasic_mean = self._mean(phasic_values)
