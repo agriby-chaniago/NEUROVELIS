@@ -21,7 +21,9 @@ function connectWarmupStream() {
 }
 
 function bindStartSessionCountdown() {
-  const startForm = document.querySelector("form[action='/experiment/session/start']");
+  const startForm = document.querySelector(
+    "form[action='/experiment/session/start']",
+  );
   if (!startForm) return;
 
   startForm.addEventListener("submit", function (e) {
@@ -88,15 +90,19 @@ function pollActive() {
       }
 
       banner.classList.add("show");
-  const cat = s.category ? ` - ${String(s.category).toUpperCase()}` : "";
+      const cat = s.category ? ` - ${String(s.category).toUpperCase()}` : "";
       const title = document.getElementById("rec-title");
       const sub = document.getElementById("rec-sub");
       const bar = document.getElementById("rec-bar");
 
-      if (title) title.textContent = `REC - ${s.respondent_id} (${s.session_id})${cat}`;
+      if (title)
+        title.textContent = `REC - ${s.respondent_id} (${s.session_id})${cat}`;
       if (sub) sub.textContent = `${s.elapsed_sec}s / ${s.duration_sec}s`;
       if (bar) {
-        const pct = Math.min(100, Math.round((s.elapsed_sec / s.duration_sec) * 100));
+        const pct = Math.min(
+          100,
+          Math.round((s.elapsed_sec / s.duration_sec) * 100),
+        );
         bar.style.width = `${pct}%`;
       }
     })

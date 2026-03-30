@@ -1,23 +1,18 @@
-{% extends "base.html" %}
-{% block title %}NEUROSENSE Model Dashboard{% endblock %}
-{% block extra_head %}
+{% extends "base.html" %} {% block title %}NEUROSENSE Model Dashboard{% endblock
+%} {% block extra_head %}
 <link rel="stylesheet" href="/static/css/layouts/fixed_dashboard.css" />
 <link rel="stylesheet" href="/static/css/pages/model.css" />
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
-{% endblock %}
-{% block header_before_h1 %}
+{% endblock %} {% block header_before_h1 %}
 <div id="status-dot"></div>
-{% endblock %}
-{% block header_after_h1 %}
+{% endblock %} {% block header_after_h1 %}
 <span id="last-update">Waiting for model data...</span>
-{% endblock %}
-{% block banners %}
+{% endblock %} {% block banners %}
 <div id="model-alert">
   <span>&#9888;</span>
   <span id="model-alert-text"></span>
 </div>
-{% endblock %}
-{% block content %}
+{% endblock %} {% block content %}
 <div class="main-layout">
   <div class="left-col">
     <div class="camera-card" id="camera-section">
@@ -26,11 +21,7 @@
         <span id="camera-status">Connecting...</span>
       </h3>
       <div class="camera-wrap">
-        <img
-          id="camera-feed"
-          src="/camera/stream"
-          alt="Camera stream"
-        />
+        <img id="camera-feed" src="/camera/stream" alt="Camera stream" />
         <canvas id="face-mesh-overlay"></canvas>
         <span id="camera-fps">- fps</span>
       </div>
@@ -98,13 +89,11 @@
     </div>
   </div>
 </div>
-{% endblock %}
-{% block footer %}
+{% endblock %} {% block footer %}
 <footer>
   NEUROSENSE &mdash; Raspberry Pi 5 &mdash; <span id="footer-ts"></span>
 </footer>
-{% endblock %}
-{% block scripts %}
+{% endblock %} {% block scripts %}
 <script src="/static/js/shared/warmup_ui.js"></script>
 <script src="/static/js/pages/model.js"></script>
 {% endblock %}

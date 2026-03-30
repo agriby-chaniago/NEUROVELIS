@@ -1,9 +1,7 @@
-{% extends "base.html" %}
-{% block title %}NEUROSENSE — Sessions{% endblock %}
+{% extends "base.html" %} {% block title %}NEUROSENSE — Sessions{% endblock %}
 {% block extra_head %}
 <link rel="stylesheet" href="/static/css/pages/sessions.css" />
-{% endblock %}
-{% block content %}
+{% endblock %} {% block content %}
 <div class="card">
   <h2>Session Summary</h2>
   <div class="stats">
@@ -82,7 +80,6 @@
   </p>
   {% endif %}
 </div>
-{% endblock %}
-{% block scripts %}
+{% endblock %} {% block scripts %}
 <script src="/static/js/pages/sessions.js"></script>
 {% endblock %}

@@ -1,9 +1,7 @@
-{% extends "base.html" %}
-{% block title %}NEUROSENSE — Experiment Control{% endblock %}
-{% block extra_head %}
+{% extends "base.html" %} {% block title %}NEUROSENSE — Experiment Control{%
+endblock %} {% block extra_head %}
 <link rel="stylesheet" href="/static/css/pages/experiment.css" />
-{% endblock %}
-{% block banners %}
+{% endblock %} {% block banners %}
 <!-- Countdown overlay -->
 <div id="countdown-overlay">
   <div id="countdown-number">3</div>
@@ -40,18 +38,13 @@
     <button class="btn-red" type="submit">■ Stop</button>
   </form>
 </div>
-{% endblock %}
-{% block content %}
+{% endblock %} {% block content %}
 <div class="main-layout">
   <div class="left-col">
     <div class="camera-card">
       <h3>&#127909; Live Camera</h3>
       <div class="camera-wrap">
-        <img
-          id="camera-feed-exp"
-          src="/camera/stream"
-          alt="camera stream"
-        />
+        <img id="camera-feed-exp" src="/camera/stream" alt="camera stream" />
         <p id="cam-err">Camera not available.</p>
       </div>
     </div>
@@ -122,8 +115,7 @@
   </div>
 </div>
 
-{% endblock %}
-{% block scripts %}
+{% endblock %} {% block scripts %}
 <script src="/static/js/shared/warmup_ui.js"></script>
 <script src="/static/js/pages/experiment.js"></script>
 {% endblock %}

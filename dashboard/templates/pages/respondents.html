@@ -1,9 +1,7 @@
-{% extends "base.html" %}
-{% block title %}NEUROSENSE — Respondents{% endblock %}
-{% block extra_head %}
+{% extends "base.html" %} {% block title %}NEUROSENSE — Respondents{% endblock
+%} {% block extra_head %}
 <link rel="stylesheet" href="/static/css/pages/respondents.css" />
-{% endblock %}
-{% block content %}
+{% endblock %} {% block content %}
 <div class="page-grid">
   <div class="card">
     <h2>Register Respondent</h2>
@@ -83,14 +81,11 @@
       </tbody>
     </table>
     {% else %}
-    <p class="respondent-empty">
-      No respondents registered yet.
-    </p>
+    <p class="respondent-empty">No respondents registered yet.</p>
     {% endif %}
   </div>
 </div>
 
-{% endblock %}
-{% block scripts %}
+{% endblock %} {% block scripts %}
 <script src="/static/js/pages/respondents.js"></script>
 {% endblock %}

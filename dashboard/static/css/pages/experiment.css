@@ -187,7 +187,9 @@ body {
   font-weight: 800;
   color: #fff;
   line-height: 1;
-  transition: transform 0.15s ease, opacity 0.15s ease;
+  transition:
+    transform 0.15s ease,
+    opacity 0.15s ease;
 }
 
 #countdown-number.pop {

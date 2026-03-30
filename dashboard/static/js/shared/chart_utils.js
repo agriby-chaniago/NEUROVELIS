@@ -3,7 +3,9 @@
 (function (global) {
   function toChartList(charts) {
     if (!Array.isArray(charts)) return [];
-    return charts.filter((chart) => chart && typeof chart.resize === "function");
+    return charts.filter(
+      (chart) => chart && typeof chart.resize === "function",
+    );
   }
 
   function registerResponsiveCharts(charts, options) {

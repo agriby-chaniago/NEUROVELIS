@@ -6,8 +6,7 @@ const CLASS_ORDER = ["anxiety", "stress", "depression"];
 
 Chart.defaults.color = "#52697e";
 Chart.defaults.borderColor = "#d0d9e4";
-Chart.defaults.font.family =
-  '"IBM Plex Sans", "Segoe UI", Roboto, sans-serif';
+Chart.defaults.font.family = '"IBM Plex Sans", "Segoe UI", Roboto, sans-serif';
 Chart.defaults.font.size = 11;
 const warmupUI = window.NeurosenseWarmupUI || null;
 
@@ -502,7 +501,10 @@ function updateCards(data, warm) {
   const warmCountdown = warm?.warmupActive ? `${warm.countdown}s` : null;
   setText(
     "val-reason",
-    warmCountdown || data.model_runtime_reason || data.model_alert_reasons || "-",
+    warmCountdown ||
+      data.model_runtime_reason ||
+      data.model_alert_reasons ||
+      "-",
   );
 }
 

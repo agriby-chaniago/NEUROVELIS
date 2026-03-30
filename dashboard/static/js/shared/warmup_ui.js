@@ -15,7 +15,9 @@
   }
 
   function normalizeState(data) {
-    const reason = String(data.model_runtime_reason || data.model_alert_reasons || "");
+    const reason = String(
+      data.model_runtime_reason || data.model_alert_reasons || "",
+    );
     const label = String(data.model_label_top1 || "").toLowerCase();
 
     let remaining = toNumber(data.model_warmup_remaining_s);
@@ -28,7 +30,8 @@
 
     if (!runtimeState) {
       if (warmupActive) runtimeState = "WARMUP";
-      else if (/SENSOR_NOT_TOUCHED/i.test(reason)) runtimeState = "WAITING_SENSOR";
+      else if (/SENSOR_NOT_TOUCHED/i.test(reason))
+        runtimeState = "WAITING_SENSOR";
       else if (label && label !== "unknown") runtimeState = "RUNNING";
       else runtimeState = "DEGRADED";
     }
@@ -76,19 +79,29 @@
     const bannerCountdown = document.getElementById("warmup-banner-countdown");
     const bannerReason = document.getElementById("warmup-banner-reason");
 
-    const shouldShowBanner = warm.warmupActive || warm.runtimeState === "WAITING_SENSOR";
+    const shouldShowBanner =
+      warm.warmupActive || warm.runtimeState === "WAITING_SENSOR";
     if (banner) {
       banner.classList.toggle("visible", shouldShowBanner);
-      banner.classList.remove("is-running", "is-warmup", "is-waiting", "is-init", "is-degraded");
+      banner.classList.remove(
+        "is-running",
+        "is-warmup",
+        "is-waiting",
+        "is-init",
+        "is-degraded",
+      );
       banner.classList.add(stateClass(warm.runtimeState));
     }
     if (bannerState) bannerState.textContent = stateText(warm.runtimeState);
     if (bannerCountdown) {
-      bannerCountdown.textContent = warm.warmupActive ? `${warm.countdown}s` : "--";
+      bannerCountdown.textContent = warm.warmupActive
+        ? `${warm.countdown}s`
+        : "--";
     }
     if (bannerReason) {
       if (warm.runtimeState === "WAITING_SENSOR") {
-        bannerReason.textContent = "Pastikan sensor disentuh agar warmup dimulai.";
+        bannerReason.textContent =
+          "Pastikan sensor disentuh agar warmup dimulai.";
       } else if (warm.warmupActive) {
         bannerReason.textContent = "Stabilisasi data model sedang berlangsung.";
       } else {
@@ -99,7 +112,13 @@
     const pill = document.getElementById(opts.pillId || "runtime-state-pill");
     if (pill) {
       pill.textContent = stateText(warm.runtimeState);
-      pill.classList.remove("is-running", "is-warmup", "is-waiting", "is-init", "is-degraded");
+      pill.classList.remove(
+        "is-running",
+        "is-warmup",
+        "is-waiting",
+        "is-init",
+        "is-degraded",
+      );
       pill.classList.add(stateClass(warm.runtimeState));
     }
 

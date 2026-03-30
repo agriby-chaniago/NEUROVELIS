@@ -30,7 +30,8 @@
     }
 
     function computeReconnectDelayMs() {
-      const expDelay = reconnectBaseMs * Math.pow(2, Math.max(0, reconnectAttempt - 1));
+      const expDelay =
+        reconnectBaseMs * Math.pow(2, Math.max(0, reconnectAttempt - 1));
       const clamped = Math.min(reconnectMaxMs, expDelay);
       const jitter = Math.floor(Math.random() * 250);
       return clamped + jitter;

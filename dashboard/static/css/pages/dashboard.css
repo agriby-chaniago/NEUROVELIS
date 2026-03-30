@@ -30,7 +30,9 @@
 }
 
 .metric-card {
-  transition: transform 0.18s ease, box-shadow 0.2s ease;
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.2s ease;
 }
 
 .metric-card:hover {
@@ -90,7 +92,9 @@
   border-radius: 5px;
   background: #eef3fb;
   color: var(--accent);
-  transition: background 0.15s, border-color 0.15s;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
 }
 
 .btn-recal:hover:not(:disabled) {
