@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title %}NEUROSENSE — Experiment Control{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="/static/css/pages/experiment.css" />
+{% endblock %}
+{% block banners %}
+<!-- Countdown overlay -->
+<div id="countdown-overlay">
+  <div id="countdown-number">3</div>
+  <div id="countdown-label">Get ready…</div>
+</div>
+
+<!-- Recording banner -->
+<div id="rec-banner" {% if active_session %}class="show" {% endif %}>
+  <div id="rec-dot"></div>
+  <div id="rec-info">
+    <strong id="rec-title"
+      >{% if active_session %}REC — {{ active_session.respondent_id }} ({{
+      active_session.session_id }}){% if active_session.category %} · {{
+      active_session.category | upper }}{% endif %}{% endif %}</strong
+    >
+    <small id="rec-sub"
+      >{% if active_session %}{{ active_session.elapsed_sec }}s / {{
+      active_session.duration_sec }}s{% endif %}</small
+    >
+    <div id="rec-bar-wrap">
+      <div
+        id="rec-bar"
+        {%
+        if
+        active_session
+        %}style="width:{{ [(active_session.elapsed_sec / active_session.duration_sec * 100)|round|int, 100]|min }}%"
+        {%
+        endif
+        %}
+      ></div>
+    </div>
+  </div>
+  <form method="POST" action="/experiment/session/stop" class="no-margin-form">
+    <button class="btn-red" type="submit">■ Stop</button>
+  </form>
+</div>
+{% endblock %}
+{% block content %}
+<div class="main-layout">
+  <div class="left-col">
+    <div class="camera-card">
+      <h3>&#127909; Live Camera</h3>
+      <div class="camera-wrap">
+        <img
+          id="camera-feed-exp"
+          src="/camera/stream"
+          alt="camera stream"
+        />
+        <p id="cam-err">Camera not available.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="right-col">
+    <div class="card">
+      <h2>Start New Session</h2>
+      <form method="POST" action="/experiment/session/start">
+        <label>Respondent</label>
+        <select name="respondent_id" required>
+          <option value="">— select —</option>
+          {% for r in respondents %}
+          <option value="{{ r.respondent_id }}">
+            {{ r.respondent_id }} — {{ r.gender }}, {{ r.age }}y
+          </option>
+          {% endfor %}
+        </select>
+        <label>Category</label>
+        <select name="category" required>
+          <option value="">— select category —</option>
+          <option value="normal">Normal</option>
+          <option value="anxiety">Anxiety</option>
+          <option value="stress">Stress</option>
+          <option value="depression">Depression</option>
+        </select>
+        <label>Duration (seconds)</label>
+        <input
+          type="number"
+          name="duration_sec"
+          value="{{ default_duration }}"
+          min="5"
+          max="600"
+        />
+        <button
+          class="btn-green"
+          type="submit"
+          {%
+          if
+          active_session
+          %}disabled
+          title="Stop current session first"
+          {%
+          endif
+          %}
+        >
+          ▶ Start Recording
+        </button>
+      </form>
+      {% if not respondents %}
+      <div class="warn-box">
+        ⚠ No respondents yet.
+        <a href="/experiment/respondents" class="warn-link">Add one →</a>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <h2>Quick Links</h2>
+      <div class="links-row">
+        <a href="/experiment/respondents" class="btn btn-muted"
+          >👥 Respondents</a
+        >
+        <a href="/experiment/sessions" class="btn btn-muted">📋 Sessions</a>
+        <a href="/" class="btn btn-muted">📊 Dashboard</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script src="/static/js/shared/warmup_ui.js"></script>
+<script src="/static/js/pages/experiment.js"></script>
+{% endblock %}

@@ -1,0 +1,23 @@
+/* Core theme tokens and global reset */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --bg: #f0f4f8;
+  --card-bg: #ffffff;
+  --border: #d0d9e4;
+  --text: #1a2b3c;
+  --muted: #52697e;
+  --accent: #1a5fad;
+  --green: #1e7845;
+  --red: #b71c1c;
+  --yellow: #c25d00;
+  --purple: #5e35b1;
+  --shadow: 0 1px 3px rgba(26, 43, 60, 0.1);
+  --shadow-soft: 0 8px 18px rgba(26, 43, 60, 0.08);
+}

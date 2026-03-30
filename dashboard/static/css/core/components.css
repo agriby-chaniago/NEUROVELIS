@@ -1,0 +1,124 @@
+/* Core reusable UI components */
+.card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+  box-shadow: var(--shadow-soft);
+}
+
+.card h2 {
+  font-size: 0.65rem;
+  font-weight: 700;
+  margin-bottom: 0.7rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+label {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 0.22rem;
+}
+
+input,
+select {
+  width: 100%;
+  padding: 0.38rem 0.6rem;
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text);
+  font-size: 0.82rem;
+  margin-bottom: 0.5rem;
+  transition: border-color 0.15s;
+}
+
+input:focus,
+select:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: #fff;
+}
+
+input:focus-visible,
+select:focus-visible,
+button:focus-visible,
+.btn:focus-visible {
+  box-shadow: 0 0 0 2px rgba(26, 95, 173, 0.18);
+}
+
+button,
+.btn {
+  padding: 0.42rem 0.9rem;
+  border: none;
+  border-radius: 5px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  letter-spacing: 0.01em;
+}
+
+.btn-green {
+  background: var(--green);
+  color: #fff;
+}
+
+.btn-red {
+  background: var(--red);
+  color: #fff;
+}
+
+.btn-muted {
+  background: #f0f4f8;
+  color: var(--text);
+  border: 1px solid var(--border);
+  text-decoration: none;
+  display: inline-block;
+  text-align: center;
+}
+
+.btn-muted:hover {
+  background: #e4eaf1;
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+th {
+  text-align: left;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.4rem 0.65rem;
+  border-bottom: 2px solid var(--border);
+  background: #f8fafc;
+  white-space: nowrap;
+}
+
+td {
+  padding: 0.45rem 0.65rem;
+  border-bottom: 1px solid #eaeff5;
+  vertical-align: middle;
+}
+
+tr:last-child td {
+  border-bottom: none;
+}
+
+tr:hover td {
+  background: #f5f8fc;
+}

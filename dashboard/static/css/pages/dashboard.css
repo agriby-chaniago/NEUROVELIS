@@ -1,0 +1,136 @@
+#alert-banner,
+#disk-warning {
+  display: none;
+  border-radius: 7px;
+  padding: 0.44rem 0.78rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+#alert-banner.visible,
+#disk-warning.visible {
+  display: flex;
+}
+
+#alert-banner {
+  background: linear-gradient(90deg, #fdecea 0%, #fff4f2 100%);
+  border: 1px solid #e8a09a;
+  border-left: 4px solid var(--red);
+  color: var(--red);
+}
+
+#disk-warning {
+  background: linear-gradient(90deg, #fef3e2 0%, #fff8ec 100%);
+  border: 1px solid #f5c97a;
+  border-left: 4px solid var(--yellow);
+  color: #7a4800;
+}
+
+.metric-card {
+  transition: transform 0.18s ease, box-shadow 0.2s ease;
+}
+
+.metric-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(26, 43, 60, 0.12);
+}
+
+.metric-card.hr .value {
+  color: #b71c1c;
+}
+
+.metric-card.spo2 .value {
+  color: #1a5fad;
+}
+
+.metric-card.temp .value {
+  color: #c25d00;
+}
+
+.metric-card.hum .value {
+  color: #1e7845;
+}
+
+.metric-card.pres .value {
+  color: #5e35b1;
+}
+
+.metric-card.gsr .value {
+  color: #0277bd;
+}
+
+.metric-card.stale .value {
+  color: var(--muted) !important;
+  opacity: 0.45;
+}
+
+.metric-card.stale::after {
+  content: "NO SIGNAL";
+  display: block;
+  font-size: 0.55rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.invalid {
+  opacity: 0.35;
+}
+
+.btn-recal {
+  margin-top: 0.28rem;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.6rem;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: #eef3fb;
+  color: var(--accent);
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.btn-recal:hover:not(:disabled) {
+  background: #dde9f8;
+  border-color: var(--accent);
+}
+
+.btn-recal:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+#recal-status {
+  font-size: 0.6rem;
+  margin-top: 0.15rem;
+  color: var(--muted);
+  min-height: 0.85rem;
+  line-height: 1.1;
+}
+
+#recal-status.ok {
+  color: var(--green);
+}
+
+#recal-status.err {
+  color: var(--red);
+}
+
+#recal-status.busy {
+  color: var(--yellow);
+}
+
+.charts-grid {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+
+@media (max-width: 860px) {
+  .charts-grid {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: none !important;
+  }
+}

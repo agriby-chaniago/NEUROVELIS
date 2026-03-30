@@ -1,0 +1,221 @@
+html,
+body {
+  height: 600px;
+  overflow: hidden;
+}
+
+#rec-banner {
+  display: none;
+  align-items: center;
+  gap: 0.62rem;
+  background: linear-gradient(90deg, #fdecea 0%, #fff3f1 100%);
+  border: 1px solid #e8a09a;
+  border-left: 4px solid var(--red);
+  border-radius: 8px;
+  padding: 0.52rem 0.88rem;
+  flex-shrink: 0;
+}
+
+#rec-banner.show {
+  display: flex;
+}
+
+#rec-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--red);
+  animation: blink 1s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+#rec-info {
+  flex: 1;
+}
+
+#rec-info strong {
+  font-size: 0.85rem;
+  color: var(--red);
+}
+
+#rec-info small {
+  color: var(--muted);
+  font-size: 0.7rem;
+  display: block;
+  margin-top: 0.1rem;
+}
+
+#rec-bar-wrap {
+  width: 100%;
+  height: 4px;
+  background: #f0d0cf;
+  border-radius: 2px;
+  margin-top: 0.3rem;
+}
+
+#rec-bar {
+  width: 0%;
+  height: 4px;
+  background: var(--red);
+  border-radius: 2px;
+  transition: width 0.5s;
+}
+
+.main-layout {
+  display: grid;
+  grid-template-columns: 390px 1fr;
+  gap: 0.6rem;
+  flex: 1;
+  min-height: 0;
+}
+
+.left-col {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.camera-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.55rem 0.7rem 0.5rem;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.camera-card h3 {
+  font-size: 0.68rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  font-weight: 600;
+  margin-bottom: 0.4rem;
+  flex-shrink: 0;
+}
+
+.camera-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.camera-wrap img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+#cam-err {
+  display: none;
+  color: var(--muted);
+  font-size: 0.78rem;
+  padding: 0.5rem;
+}
+
+.no-margin-form {
+  margin: 0;
+}
+
+.right-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-height: 0;
+}
+
+.card {
+  padding: 0.75rem 0.9rem;
+}
+
+.card h2 {
+  margin-bottom: 0.65rem;
+}
+
+.links-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.warn-box {
+  color: var(--yellow);
+  font-size: 0.75rem;
+  margin-top: 0.5rem;
+  background: #fef3e2;
+  padding: 0.4rem 0.6rem;
+  border-radius: 5px;
+  border-left: 3px solid var(--yellow);
+}
+
+.warn-link {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+#countdown-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 22, 40, 0.82);
+  z-index: 1000;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+}
+
+#countdown-overlay.show {
+  display: flex;
+}
+
+#countdown-number {
+  font-size: 7rem;
+  font-weight: 800;
+  color: #fff;
+  line-height: 1;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+#countdown-number.pop {
+  transform: scale(1.25);
+  opacity: 0.7;
+}
+
+#countdown-label {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.65);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 860px) {
+  html,
+  body {
+    height: auto;
+    min-height: 100dvh;
+    overflow: auto;
+  }
+
+  .main-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .left-col {
+    min-height: 220px;
+  }
+}

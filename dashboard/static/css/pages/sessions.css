@@ -1,0 +1,86 @@
+body {
+  min-height: 600px;
+}
+
+.card {
+  flex: 1;
+}
+
+.stats {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+  flex-wrap: wrap;
+}
+
+.stat {
+  background: #f0f4f8;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 0.45rem 0.85rem;
+  font-size: 0.72rem;
+  color: var(--muted);
+  min-width: 90px;
+}
+
+.stat strong {
+  color: var(--text);
+  display: block;
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.pill {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 10px;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.pill-done {
+  background: #e6f4ed;
+  color: var(--green);
+}
+
+.pill-rec {
+  background: #fdecea;
+  color: var(--red);
+}
+
+.pill-interrupted {
+  background: #fef3e2;
+  color: #7a4800;
+}
+
+.pill-category {
+  background: #eef2ff;
+  color: #3730a3;
+  font-size: 0.66rem;
+}
+
+.btn-delete {
+  background: none;
+  border: 1px solid #e57373;
+  color: #e57373;
+  border-radius: 5px;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.btn-delete:hover {
+  background: #fff3f3;
+}
+
+.session-empty {
+  color: var(--muted);
+  font-size: 0.82rem;
+  padding: 0.75rem 0;
+}
+
+.session-empty a {
+  color: var(--accent);
+  font-weight: 600;
+}

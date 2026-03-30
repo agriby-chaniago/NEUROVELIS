@@ -145,9 +145,6 @@ def _compute_independent_chances_from_scores(
 
     out: dict[str, float] = {}
     for cls in config.MODEL_CLASSES:
-        if cls == "normal" and bool(getattr(config, "MODEL_EXCLUDE_NORMAL_CLASS", False)):
-            out[cls] = 0.0
-            continue
         score = float(class_scores.get(cls, 0.0))
         raw = _clamp01(_sigmoid((score - bias) / temperature))
         out[cls] = _postprocess_chance(raw)

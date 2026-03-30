@@ -1,0 +1,106 @@
+#model-alert {
+  display: none;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 6px;
+  padding: 0.42rem 0.78rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  background: linear-gradient(90deg, #fdecea 0%, #fff4f2 100%);
+  border: 1px solid #e8a09a;
+  border-left: 4px solid var(--red);
+  color: var(--red);
+  flex-shrink: 0;
+}
+
+#model-alert.visible {
+  display: flex;
+}
+
+.metric-card {
+  transition: transform 0.18s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.metric-card:hover {
+  transform: translateY(-1px);
+  border-color: #bdd0e6;
+  box-shadow: 0 7px 18px rgba(26, 43, 60, 0.12);
+}
+
+.metric-card.pred .value {
+  color: var(--accent);
+}
+
+.metric-card.conf .value {
+  color: #1e7845;
+}
+
+.metric-card.state .value {
+  color: #5e35b1;
+}
+
+.metric-card.hr .value {
+  color: #b71c1c;
+}
+
+.metric-card.spo2 .value {
+  color: #1a5fad;
+}
+
+.metric-card.gsr .value {
+  color: #0277bd;
+}
+
+.metric-card.lat .value {
+  color: #c25d00;
+}
+
+.metric-card.signal .value {
+  color: #0277bd;
+  font-size: 1rem;
+}
+
+.metric-card.reason .value {
+  color: #b71c1c;
+  font-size: 0.84rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#face-mesh-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 2;
+}
+
+#camera-fps {
+  z-index: 3;
+  backdrop-filter: blur(3px);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  box-shadow: 0 2px 7px rgba(0, 0, 0, 0.26);
+}
+
+.camera-wrap::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  background:
+    radial-gradient(circle at 50% 45%, rgba(20, 132, 200, 0.1) 0%, rgba(20, 132, 200, 0) 54%),
+    linear-gradient(180deg, rgba(9, 28, 41, 0.05) 0%, rgba(9, 28, 41, 0) 35%, rgba(9, 28, 41, 0.09) 100%);
+}
+
+.charts-grid {
+  grid-template-columns: 1fr 1fr;
+}
+
+@media (max-width: 860px) {
+  .charts-grid {
+    grid-template-columns: 1fr !important;
+  }
+}

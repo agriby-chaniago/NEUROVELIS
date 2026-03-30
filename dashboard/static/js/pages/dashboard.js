@@ -13,8 +13,10 @@ const RECONNECT_MS = 3000; // reconnect delay after SSE error
 Chart.defaults.color = "#52697e";
 Chart.defaults.borderColor = "#d0d9e4";
 Chart.defaults.font.family =
-  '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  '"IBM Plex Sans", "Segoe UI", Roboto, sans-serif';
 Chart.defaults.font.size = 11;
+
+const warmupUI = window.NeurosenseWarmupUI || null;
 
 const CHART_OPTIONS = (yLabel, suggestedMin, suggestedMax) => ({
   animation: false,
@@ -188,87 +190,129 @@ function updateAlert(d) {
 const statusDot = document.getElementById("status-dot");
 const lastUpdate = document.getElementById("last-update");
 const footerTs = document.getElementById("footer-ts");
+const sseClient = window.NeurosenseSSEClient || null;
+const chartUtils = window.NeurosenseChartUtils || null;
+let dashboardStream = null;
+let unregisterChartResize = null;
+
+function syncStatusDot(warm) {
+  if (!statusDot) return;
+  if (!warm) {
+    statusDot.className = "live";
+    return;
+  }
+
+  const state = String(warm.runtimeState || "").toUpperCase();
+  if (state === "RUNNING") {
+    statusDot.className = "live";
+    return;
+  }
+  if (state === "WARMUP" || state === "INIT") {
+    statusDot.className = "warmup";
+    return;
+  }
+  statusDot.className = "error";
+}
 
 function connect() {
-  const es = new EventSource("/stream");
+  if (!sseClient) return;
+  if (dashboardStream) dashboardStream.close();
+  dashboardStream = sseClient.connect({
+    url: "/stream",
+    reconnectMs: RECONNECT_MS,
+    reconnectMaxMs: 20000,
+    pauseWhenHidden: true,
+    parseJson: true,
+    onOpen: () => {
+      statusDot.className = "live";
+      console.info("[NEUROSENSE] SSE connected.");
+    },
+    onJson: (d) => {
+      const warm = warmupUI
+        ? warmupUI.apply(d, { showOverlay: true, overlayMinSeconds: 0.2 })
+        : null;
 
-  es.onopen = () => {
-    statusDot.className = "live";
-    console.info("[NEUROSENSE] SSE connected.");
-  };
+      // Update charts
+      pushLabel(d.timestamp_utc);
+      pushVal(buf.hr, d.heart_rate_bpm);
+      pushVal(buf.spo2, d.spo2_percent);
+      pushVal(buf.temp, d.temperature_celsius);
+      pushVal(buf.hum, d.humidity_percent);
+      pushVal(buf.pres, d.pressure_hpa);
+      pushVal(buf.gsr, d.gsr_conductance_us);
+      pushVal(buf.ads, d.ads1_ch0_V);
 
-  es.onmessage = (event) => {
-    let d;
-    try {
-      d = JSON.parse(event.data);
-    } catch (_) {
-      return;
-    }
+      chartHR.update();
+      chartEnv.update();
+      chartPres.update();
+      chartGSR.update();
 
-    // Update charts
-    pushLabel(d.timestamp_utc);
-    pushVal(buf.hr, d.heart_rate_bpm);
-    pushVal(buf.spo2, d.spo2_percent);
-    pushVal(buf.temp, d.temperature_celsius);
-    pushVal(buf.hum, d.humidity_percent);
-    pushVal(buf.pres, d.pressure_hpa);
-    pushVal(buf.gsr, d.gsr_conductance_us);
-    pushVal(buf.ads, d.ads1_ch0_V);
+      // Update metric cards
+      updateCards(d);
+      updateAlert(d);
 
-    chartHR.update();
-    chartEnv.update();
-    chartPres.update();
-    chartGSR.update();
+      // Sensor stale: grey out all metric cards when sensors stop updating
+      document.querySelectorAll(".metric-card").forEach((card) => {
+        card.classList.toggle("stale", !!d.sensor_stale);
+      });
 
-    // Update metric cards
-    updateCards(d);
-    updateAlert(d);
-
-    // Sensor stale: grey out all metric cards when sensors stop updating
-    document.querySelectorAll(".metric-card").forEach((card) => {
-      card.classList.toggle("stale", !!d.sensor_stale);
-    });
-
-    // Disk space warning (threshold: < 2 GB)
-    const diskWarn = document.getElementById("disk-warning");
-    const diskText = document.getElementById("disk-warning-text");
-    if (diskWarn && d.disk_free_gb !== null && d.disk_free_gb !== undefined) {
-      if (d.disk_free_gb < 2) {
-        diskText.textContent = `Disk space low — ${d.disk_free_gb} GB remaining. Recording may fail soon.`;
-        diskWarn.classList.add("visible");
-      } else {
-        diskWarn.classList.remove("visible");
+      // Disk space warning (threshold: < 2 GB)
+      const diskWarn = document.getElementById("disk-warning");
+      const diskText = document.getElementById("disk-warning-text");
+      if (diskWarn && d.disk_free_gb !== null && d.disk_free_gb !== undefined) {
+        if (d.disk_free_gb < 2) {
+          diskText.textContent = `Disk space low — ${d.disk_free_gb} GB remaining. Recording may fail soon.`;
+          diskWarn.classList.add("visible");
+        } else {
+          diskWarn.classList.remove("visible");
+        }
       }
-    }
 
-    // Update camera FPS badge
-    const fpsBadge = document.getElementById("camera-fps");
-    if (fpsBadge) {
-      fpsBadge.textContent =
-        d.camera_fps !== null && d.camera_fps !== undefined
-          ? d.camera_fps.toFixed(1) + " fps"
-          : "— fps";
-    }
+      // Update camera FPS badge
+      const fpsBadge = document.getElementById("camera-fps");
+      if (fpsBadge) {
+        fpsBadge.textContent =
+          d.camera_fps !== null && d.camera_fps !== undefined
+            ? d.camera_fps.toFixed(1) + " fps"
+            : "— fps";
+      }
 
-    // Update timestamps
-    const now = new Date().toLocaleTimeString();
-    lastUpdate.textContent = `Last update: ${now}`;
-    footerTs.textContent = d.timestamp_utc || now;
-  };
-
-  es.onerror = () => {
-    statusDot.className = "error";
-    lastUpdate.textContent = "Connection lost — reconnecting…";
-    es.close();
-    setTimeout(connect, RECONNECT_MS);
-  };
+      // Update timestamps
+      const now = new Date().toLocaleTimeString();
+      if (warm && warm.warmupActive) {
+        lastUpdate.textContent = `Last update: ${now} - Warmup ${warm.countdown}s`;
+      } else {
+        lastUpdate.textContent = `Last update: ${now}`;
+      }
+      footerTs.textContent = d.timestamp_utc || now;
+      syncStatusDot(warm);
+    },
+    onError: () => {
+      statusDot.className = "error";
+      lastUpdate.textContent = "Connection lost — reconnecting…";
+    },
+  });
 }
 
 connect();
+if (chartUtils) {
+  unregisterChartResize = chartUtils.registerResponsiveCharts([
+    chartHR,
+    chartEnv,
+    chartPres,
+    chartGSR,
+  ]);
+}
+
+window.addEventListener("beforeunload", () => {
+  if (dashboardStream) dashboardStream.close();
+  if (unregisterChartResize) unregisterChartResize();
+});
 
 // ── Camera status ─────────────────────────────────────────────────────────
 const camStatus = document.getElementById("camera-status");
 const camSection = document.getElementById("camera-section");
+const cameraFeed = document.getElementById("camera-feed");
 const CAMERA_RETRY_MS = 2500;
 let cameraRetryTimer = null;
 
@@ -305,6 +349,14 @@ function onCameraError() {
   if (feed) feed.style.display = "none";
   scheduleCameraRetry();
 }
+
+function bindCameraFeedEvents() {
+  if (!cameraFeed) return;
+  cameraFeed.addEventListener("load", onCameraLoad);
+  cameraFeed.addEventListener("error", onCameraError);
+}
+
+bindCameraFeedEvents();
 
 // ── GSR Recalibration ─────────────────────────────────────────────────────
 async function recalibrateGSR() {

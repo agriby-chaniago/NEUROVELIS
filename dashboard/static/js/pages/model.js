@@ -7,8 +7,9 @@ const CLASS_ORDER = ["anxiety", "stress", "depression"];
 Chart.defaults.color = "#52697e";
 Chart.defaults.borderColor = "#d0d9e4";
 Chart.defaults.font.family =
-  '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  '"IBM Plex Sans", "Segoe UI", Roboto, sans-serif';
 Chart.defaults.font.size = 11;
+const warmupUI = window.NeurosenseWarmupUI || null;
 
 const labels = [];
 const anxietyTrendBuf = [];
@@ -127,6 +128,11 @@ const footerTs = document.getElementById("footer-ts");
 const cameraFeed = document.getElementById("camera-feed");
 const meshCanvas = document.getElementById("face-mesh-overlay");
 const meshCtx = meshCanvas ? meshCanvas.getContext("2d") : null;
+const sseClient = window.NeurosenseSSEClient || null;
+const chartUtils = window.NeurosenseChartUtils || null;
+let modelStream = null;
+let meshStream = null;
+let unregisterChartResize = null;
 
 const MESH_STYLE = {
   smoothingAlpha: 0.72,
@@ -424,15 +430,33 @@ function getTopChance(data) {
   return values.length ? Math.max(...values) : null;
 }
 
-function updateSignalStatus(data) {
-  const label = String(data.model_label_top1 || "").toLowerCase();
-  if (label === "unknown") {
-    setText("val-signal", "NO SIGNAL");
-    setText("val-state", "DEGRADED");
+function updateSignalStatus(data, warm) {
+  const state = String(
+    warm?.runtimeState || data.model_runtime_state || "DEGRADED",
+  ).toUpperCase();
+
+  if (state === "RUNNING") {
+    setText("val-signal", "OK");
+    setText("val-state", "RUNNING");
     return;
   }
-  setText("val-signal", "OK");
-  setText("val-state", "RUNNING");
+  if (state === "WARMUP") {
+    setText("val-signal", "WARMUP");
+    setText("val-state", "WARMUP");
+    return;
+  }
+  if (state === "WAITING_SENSOR") {
+    setText("val-signal", "WAIT SENSOR");
+    setText("val-state", "WAITING");
+    return;
+  }
+  if (state === "INIT") {
+    setText("val-signal", "INIT");
+    setText("val-state", "INIT");
+    return;
+  }
+  setText("val-signal", "NO SIGNAL");
+  setText("val-state", "DEGRADED");
 }
 
 function updateAlert(data) {
@@ -448,7 +472,7 @@ function updateAlert(data) {
   }
 }
 
-function updateCards(data) {
+function updateCards(data, warm) {
   const topClass = formatLabel(data.model_label_top1);
   const conf = getTopChance(data);
   const fallbackConf = data.model_confidence_top1;
@@ -474,7 +498,12 @@ function updateCards(data) {
   setText("val-spo2", spo2);
   setText("val-gsr", gsr);
   setText("val-latency", latency);
-  setText("val-reason", data.model_alert_reasons || "-");
+
+  const warmCountdown = warm?.warmupActive ? `${warm.countdown}s` : null;
+  setText(
+    "val-reason",
+    warmCountdown || data.model_runtime_reason || data.model_alert_reasons || "-",
+  );
 }
 
 function updateCharts(data) {
@@ -494,70 +523,86 @@ function updateCharts(data) {
 }
 
 function connect() {
-  const es = new EventSource("/stream");
+  if (!sseClient) return;
+  if (modelStream) modelStream.close();
 
-  es.onopen = () => {
-    statusDot.className = "live";
-    lastUpdate.textContent = "Model stream connected";
-  };
+  modelStream = sseClient.connect({
+    url: "/stream",
+    reconnectMs: RECONNECT_MS,
+    reconnectMaxMs: 20000,
+    pauseWhenHidden: true,
+    parseJson: true,
+    onOpen: () => {
+      statusDot.className = "live";
+      lastUpdate.textContent = "Model stream connected";
+    },
+    onJson: (data) => {
+      const warm = warmupUI
+        ? warmupUI.apply(data, { showOverlay: true, overlayMinSeconds: 0.2 })
+        : null;
 
-  es.onmessage = (event) => {
-    let data;
-    try {
-      data = JSON.parse(event.data);
-    } catch (_err) {
-      return;
-    }
+      updateCards(data, warm);
+      updateSignalStatus(data, warm);
+      updateAlert(data);
+      updateCharts(data);
 
-    updateCards(data);
-    updateSignalStatus(data);
-    updateAlert(data);
-    updateCharts(data);
+      if (data.camera_fps !== null && data.camera_fps !== undefined) {
+        setText("camera-fps", `${Number(data.camera_fps).toFixed(1)} fps`);
+      }
 
-    if (data.camera_fps !== null && data.camera_fps !== undefined) {
-      setText("camera-fps", `${Number(data.camera_fps).toFixed(1)} fps`);
-    }
-
-    const now = new Date().toLocaleTimeString();
-    lastUpdate.textContent = `Last update: ${now}`;
-    footerTs.textContent =
-      data.model_timestamp_utc || data.timestamp_utc || now;
-  };
-
-  es.onerror = () => {
-    statusDot.className = "error";
-    lastUpdate.textContent = "Connection lost — reconnecting...";
-    es.close();
-    setTimeout(connect, RECONNECT_MS);
-  };
+      const now = new Date().toLocaleTimeString();
+      if (warm && warm.warmupActive) {
+        statusDot.className = "warmup";
+        lastUpdate.textContent = `Warmup in progress - ${warm.countdown}s`;
+      } else if (warm && warm.runtimeState === "RUNNING") {
+        statusDot.className = "live";
+        lastUpdate.textContent = `Last update: ${now}`;
+      } else {
+        statusDot.className = "error";
+        lastUpdate.textContent = "Waiting for stable signal...";
+      }
+      footerTs.textContent =
+        data.model_timestamp_utc || data.timestamp_utc || now;
+    },
+    onError: () => {
+      statusDot.className = "error";
+      lastUpdate.textContent = "Connection lost — reconnecting...";
+    },
+  });
 }
 
 connect();
 
 function connectMeshStream() {
-  const es = new EventSource("/model/mesh_stream");
+  if (!sseClient) return;
+  if (meshStream) meshStream.close();
 
-  es.onmessage = (event) => {
-    let data;
-    try {
-      data = JSON.parse(event.data);
-    } catch (_err) {
-      return;
-    }
-    drawFaceMesh(data.model_face_landmarks);
-  };
-
-  es.onerror = () => {
-    es.close();
-    clearMeshOverlay();
-    setTimeout(connectMeshStream, RECONNECT_MS);
-  };
+  meshStream = sseClient.connect({
+    url: "/model/mesh_stream",
+    reconnectMs: RECONNECT_MS,
+    reconnectMaxMs: 12000,
+    pauseWhenHidden: true,
+    parseJson: true,
+    onJson: (data) => {
+      drawFaceMesh(data.model_face_landmarks);
+    },
+    onError: () => {
+      clearMeshOverlay();
+    },
+  });
 }
 
 loadMeshTopology().then(connectMeshStream);
+if (chartUtils) {
+  unregisterChartResize = chartUtils.registerResponsiveCharts([
+    probChart,
+    confChart,
+  ]);
+}
 
 const camStatus = document.getElementById("camera-status");
 const camSection = document.getElementById("camera-section");
+const modelCameraFeed = document.getElementById("camera-feed");
 const CAMERA_RETRY_MS = 2500;
 let cameraRetryTimer = null;
 
@@ -596,4 +641,18 @@ function onCameraError() {
   scheduleCameraRetry();
 }
 
+function bindCameraFeedEvents() {
+  if (!modelCameraFeed) return;
+  modelCameraFeed.addEventListener("load", onCameraLoad);
+  modelCameraFeed.addEventListener("error", onCameraError);
+}
+
+bindCameraFeedEvents();
+
 window.addEventListener("resize", syncMeshCanvasSize);
+
+window.addEventListener("beforeunload", () => {
+  if (modelStream) modelStream.close();
+  if (meshStream) meshStream.close();
+  if (unregisterChartResize) unregisterChartResize();
+});

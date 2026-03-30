@@ -1,0 +1,42 @@
+body {
+  min-height: 600px;
+}
+
+.page-grid {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  gap: 0.65rem;
+  flex: 1;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.55rem;
+}
+
+.respondent-error {
+  color: var(--red);
+  font-size: 0.78rem;
+  margin-bottom: 0.6rem;
+  background: #fdecea;
+  border: 1px solid #e8a09a;
+  border-left: 3px solid var(--red);
+  border-radius: 5px;
+  padding: 0.4rem 0.65rem;
+}
+
+.respondent-note {
+  color: var(--muted);
+}
+
+.respondent-empty {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+@media (max-width: 920px) {
+  .page-grid {
+    grid-template-columns: 1fr;
+  }
+}

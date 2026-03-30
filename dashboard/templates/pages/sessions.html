@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}NEUROSENSE — Sessions{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="/static/css/pages/sessions.css" />
+{% endblock %}
+{% block content %}
+<div class="card">
+  <h2>Session Summary</h2>
+  <div class="stats">
+    <div class="stat">
+      <strong>{{ sessions|length }}</strong> Total Sessions
+    </div>
+    <div class="stat">
+      <strong
+        >{{ sessions|selectattr('status','equalto','done')|list|length
+        }}</strong
+      >
+      Completed
+    </div>
+    <div class="stat">
+      <strong
+        >{{ sessions|map(attribute='respondent_id')|unique|list|length
+        }}</strong
+      >
+      Respondents
+    </div>
+  </div>
+
+  {% if sessions %}
+  <table>
+    <thead>
+      <tr>
+        <th>Session</th>
+        <th>Respondent</th>
+        <th>Category</th>
+        <th>Duration</th>
+        <th>Frames</th>
+        <th>Sensor Rows</th>
+        <th>Status</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in sessions %}
+      <tr id="row-{{ s.session_id }}">
+        <td><strong>{{ s.session_id }}</strong></td>
+        <td>{{ s.respondent_id }}</td>
+        <td>
+          {% if s.category %}
+          <span class="pill pill-category">
+            {{ s.category | capitalize }}
+          </span>
+          {% else %}—{% endif %}
+        </td>
+        <td>{{ s.duration_sec }}s</td>
+        <td>{{ s.frame_count }}</td>
+        <td>{{ s.sensor_rows }}</td>
+        <td>
+          <span
+            class="pill {% if s.status=='done' %}pill-done{% elif s.status=='interrupted' %}pill-interrupted{% else %}pill-rec{% endif %}"
+          >
+            {{ s.status }}
+          </span>
+        </td>
+        <td>
+          <button
+            class="btn-delete"
+            data-id="{{ s.session_id }}"
+            title="Hapus sesi"
+          >
+            Hapus
+          </button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="session-empty">
+    No sessions recorded yet.
+    <a href="/experiment">Start one →</a>
+  </p>
+  {% endif %}
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="/static/js/pages/sessions.js"></script>
+{% endblock %}

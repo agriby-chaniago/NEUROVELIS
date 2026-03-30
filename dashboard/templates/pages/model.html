@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}NEUROSENSE Model Dashboard{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="/static/css/layouts/fixed_dashboard.css" />
+<link rel="stylesheet" href="/static/css/pages/model.css" />
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+{% endblock %}
+{% block header_before_h1 %}
+<div id="status-dot"></div>
+{% endblock %}
+{% block header_after_h1 %}
+<span id="last-update">Waiting for model data...</span>
+{% endblock %}
+{% block banners %}
+<div id="model-alert">
+  <span>&#9888;</span>
+  <span id="model-alert-text"></span>
+</div>
+{% endblock %}
+{% block content %}
+<div class="main-layout">
+  <div class="left-col">
+    <div class="camera-card" id="camera-section">
+      <h3>
+        &#127909; Camera Feed
+        <span id="camera-status">Connecting...</span>
+      </h3>
+      <div class="camera-wrap">
+        <img
+          id="camera-feed"
+          src="/camera/stream"
+          alt="Camera stream"
+        />
+        <canvas id="face-mesh-overlay"></canvas>
+        <span id="camera-fps">- fps</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="right-col">
+    <div class="metrics-grid">
+      <div class="metric-card pred">
+        <div class="label">Top Class</div>
+        <div class="value" id="val-top-class">UNKNOWN</div>
+        <div class="unit">3-class</div>
+      </div>
+      <div class="metric-card conf">
+        <div class="label">Top Chance</div>
+        <div class="value" id="val-confidence">-</div>
+        <div class="unit">%</div>
+      </div>
+      <div class="metric-card state">
+        <div class="label">Model State</div>
+        <div class="value" id="val-state">INIT</div>
+        <div class="unit">service</div>
+      </div>
+      <div class="metric-card hr">
+        <div class="label">Heart Rate</div>
+        <div class="value" id="val-hr">-</div>
+        <div class="unit">BPM</div>
+      </div>
+      <div class="metric-card spo2">
+        <div class="label">SpO2</div>
+        <div class="value" id="val-spo2">-</div>
+        <div class="unit">%</div>
+      </div>
+      <div class="metric-card gsr">
+        <div class="label">GSR / EDA</div>
+        <div class="value" id="val-gsr">-</div>
+        <div class="unit">uS</div>
+      </div>
+      <div class="metric-card lat">
+        <div class="label">Latency</div>
+        <div class="value" id="val-latency">-</div>
+        <div class="unit">ms</div>
+      </div>
+      <div class="metric-card signal">
+        <div class="label">Signal</div>
+        <div class="value" id="val-signal">NO SIGNAL</div>
+        <div class="unit">camera+sensor</div>
+      </div>
+      <div class="metric-card reason">
+        <div class="label">Reason</div>
+        <div class="value" id="val-reason">-</div>
+        <div class="unit">status</div>
+      </div>
+    </div>
+
+    <div class="charts-grid">
+      <div class="chart-card">
+        <h3>Class Chance (Independent)</h3>
+        <canvas id="chart-prob"></canvas>
+      </div>
+      <div class="chart-card">
+        <h3>Class Chance Trend (60 s)</h3>
+        <canvas id="chart-conf"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block footer %}
+<footer>
+  NEUROSENSE &mdash; Raspberry Pi 5 &mdash; <span id="footer-ts"></span>
+</footer>
+{% endblock %}
+{% block scripts %}
+<script src="/static/js/shared/warmup_ui.js"></script>
+<script src="/static/js/pages/model.js"></script>
+{% endblock %}

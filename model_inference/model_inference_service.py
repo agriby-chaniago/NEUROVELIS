@@ -78,6 +78,10 @@ class ModelInferenceService:
             "model_face_backend": self._visual_extractor.health().get("backend"),
             "model_latency_ms": None,
             "model_timestamp_utc": None,
+            "model_warmup_active": False,
+            "model_warmup_remaining_s": 0.0,
+            "model_runtime_state": "INIT",
+            "model_runtime_reason": "SERVICE_INIT",
         }
         self._mesh_latest: dict = {
             "model_face_detected": False,
@@ -201,6 +205,7 @@ class ModelInferenceService:
                 if self._sensor_touch_paused:
                     result = _unknown_payload(reason="SENSOR_NOT_TOUCHED_PAUSED")
                     result["model_latency_ms"] = 0
+                    result = self._annotate_runtime_state(result=result, now=start)
                     result["model_face_detected"] = face_detected
                     result["model_face_landmarks"] = landmarks_norm
                     result["model_face_backend"] = self._visual_extractor.health().get("backend")
@@ -255,6 +260,7 @@ class ModelInferenceService:
                 result["model_face_detected"] = face_detected
                 result["model_face_landmarks"] = landmarks_norm
                 result["model_face_backend"] = self._visual_extractor.health().get("backend")
+                result = self._annotate_runtime_state(result=result, now=start)
 
                 result["model_timestamp_utc"] = datetime.now(timezone.utc).isoformat()
 
@@ -382,6 +388,39 @@ class ModelInferenceService:
             out["model_alert_reasons"] = f"CLASS={label_top1.upper()} CONF={round(conf_top1, 3)}"
         elif str(out.get("model_alert_reasons", "")).startswith("CLASS="):
             out["model_alert_reasons"] = ""
+        return out
+
+    def _annotate_runtime_state(self, result: dict, now: float) -> dict:
+        """Attach explicit runtime state and warmup countdown to payload."""
+        out = dict(result)
+        reason = str(out.get("model_alert_reasons") or "")
+        label = str(out.get("model_label_top1") or "").lower()
+
+        remaining = max(0.0, self._class_warmup_until - now)
+        warmup_active = (not self._sensor_touch_paused) and remaining > 0.0
+
+        if self._sensor_touch_paused:
+            state = "WAITING_SENSOR"
+            runtime_reason = "SENSOR_NOT_TOUCHED"
+            warmup_active = False
+            remaining = 0.0
+        elif warmup_active:
+            state = "WARMUP"
+            runtime_reason = f"CLASS_WARMUP:{round(remaining, 1)}s"
+        elif label in config.MODEL_CLASSES:
+            state = "RUNNING"
+            runtime_reason = "LIVE"
+        elif reason.startswith("SERVICE_INIT"):
+            state = "INIT"
+            runtime_reason = reason
+        else:
+            state = "DEGRADED"
+            runtime_reason = reason or "UNKNOWN"
+
+        out["model_warmup_active"] = warmup_active
+        out["model_warmup_remaining_s"] = round(remaining, 2) if warmup_active else 0.0
+        out["model_runtime_state"] = state
+        out["model_runtime_reason"] = runtime_reason
         return out
 
     def _append_history(

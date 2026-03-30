@@ -75,7 +75,7 @@ def create_app(
 
     @app.route("/")
     def index():
-        return render_template("index.html")
+        return render_template("pages/dashboard.html")
 
     @app.route("/stream")
     def stream():
@@ -212,7 +212,7 @@ def create_app(
     @app.route("/model")
     def model_dashboard():
         """Dedicated realtime 4-class model dashboard (fixed 1024x600 layout)."""
-        return render_template("model.html")
+        return render_template("pages/model.html")
 
     @app.route("/model/snapshot")
     def model_snapshot():
@@ -267,7 +267,7 @@ def create_app(
         active      = sm.get_active_session()
         duration    = getattr(config, "EXPERIMENT_SESSION_DURATION_S", 60)
         return render_template(
-            "experiment.html",
+            "pages/experiment.html",
             respondents=respondents,
             active_session=active,
             default_duration=duration,
@@ -280,7 +280,7 @@ def create_app(
         if rr is None:
             return Response("Experiment module not initialised", status=503)
         return render_template(
-            "respondents.html",
+            "pages/respondents.html",
             respondents=rr.get_all(),
             next_id=rr.next_id(),
         )
@@ -302,7 +302,7 @@ def create_app(
             return redirect(url_for("experiment_respondents"))
         except ValueError as exc:
             return render_template(
-                "respondents.html",
+                "pages/respondents.html",
                 respondents=rr.get_all(),
                 next_id=rr.next_id(),
                 error=str(exc),
@@ -323,7 +323,7 @@ def create_app(
         if sm is None:
             return Response("Experiment module not initialised", status=503)
         sessions = sm.list_sessions()
-        return render_template("sessions.html", sessions=sessions)
+        return render_template("pages/sessions.html", sessions=sessions)
 
     @app.route("/experiment/session/<session_id>", methods=["DELETE"])
     def experiment_session_delete(session_id: str):
