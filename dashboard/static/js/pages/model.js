@@ -701,7 +701,8 @@ function flushChartFrame(rafTs) {
       0,
       Math.min(1, (rafTs - chartTransition.startTs) / duration),
     );
-    const eased = guardrailLevel >= 2 ? progress : 1 - Math.pow(1 - progress, 2);
+    const eased =
+      guardrailLevel >= 2 ? progress : 1 - Math.pow(1 - progress, 2);
     const displayProbs = chartTransition.from.map((start, index) => {
       const target = chartTransition.to[index];
       return start + (target - start) * eased;
@@ -784,7 +785,8 @@ function connect() {
     },
     onError: () => {
       if (statusDot) statusDot.className = "error";
-      if (lastUpdate) lastUpdate.textContent = "Connection lost — reconnecting...";
+      if (lastUpdate)
+        lastUpdate.textContent = "Connection lost — reconnecting...";
     },
   });
 }

@@ -281,7 +281,12 @@ function applyRealtimeEvent(payload) {
     card.classList.toggle("stale", !!d.sensor_stale);
   }
 
-  if (diskWarn && diskText && d.disk_free_gb !== null && d.disk_free_gb !== undefined) {
+  if (
+    diskWarn &&
+    diskText &&
+    d.disk_free_gb !== null &&
+    d.disk_free_gb !== undefined
+  ) {
     if (d.disk_free_gb < 2) {
       diskText.textContent = `Disk space low — ${d.disk_free_gb} GB remaining. Recording may fail soon.`;
       diskWarn.classList.add("visible");
@@ -373,7 +378,8 @@ function connect() {
     },
     onError: () => {
       if (statusDot) statusDot.className = "error";
-      if (lastUpdate) lastUpdate.textContent = "Connection lost — reconnecting…";
+      if (lastUpdate)
+        lastUpdate.textContent = "Connection lost — reconnecting…";
     },
   });
 }
