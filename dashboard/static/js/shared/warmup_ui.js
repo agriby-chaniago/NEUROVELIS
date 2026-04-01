@@ -1,6 +1,57 @@
 "use strict";
 
 (function (global) {
+  const lastRender = {
+    bannerVisible: null,
+    bannerClass: "",
+    bannerStateText: "",
+    bannerCountdownText: "",
+    bannerReasonText: "",
+    pillText: "",
+    pillClass: "",
+    overlayVisible: null,
+    overlayNumberText: "",
+    overlayLabelText: "",
+  };
+
+  function setTextIfChanged(el, nextText, key) {
+    if (!el) return;
+    const value = String(nextText);
+    if (lastRender[key] === value) return;
+    el.textContent = value;
+    lastRender[key] = value;
+  }
+
+  function setVisibleIfChanged(el, visible, key) {
+    if (!el) return;
+    const value = Boolean(visible);
+    if (lastRender[key] === value) return;
+    el.classList.toggle("visible", value);
+    lastRender[key] = value;
+  }
+
+  function setShowIfChanged(el, visible, key) {
+    if (!el) return;
+    const value = Boolean(visible);
+    if (lastRender[key] === value) return;
+    el.classList.toggle("show", value);
+    lastRender[key] = value;
+  }
+
+  function setStateClassIfChanged(el, nextClass, key) {
+    if (!el) return;
+    if (lastRender[key] === nextClass) return;
+    el.classList.remove(
+      "is-running",
+      "is-warmup",
+      "is-waiting",
+      "is-init",
+      "is-degraded",
+    );
+    el.classList.add(nextClass);
+    lastRender[key] = nextClass;
+  }
+
   function toNumber(val) {
     const n = Number(val);
     return Number.isFinite(n) ? n : null;
@@ -81,45 +132,44 @@
 
     const shouldShowBanner =
       warm.warmupActive || warm.runtimeState === "WAITING_SENSOR";
-    if (banner) {
-      banner.classList.toggle("visible", shouldShowBanner);
-      banner.classList.remove(
-        "is-running",
-        "is-warmup",
-        "is-waiting",
-        "is-init",
-        "is-degraded",
-      );
-      banner.classList.add(stateClass(warm.runtimeState));
-    }
-    if (bannerState) bannerState.textContent = stateText(warm.runtimeState);
-    if (bannerCountdown) {
-      bannerCountdown.textContent = warm.warmupActive
-        ? `${warm.countdown}s`
-        : "--";
-    }
+    setVisibleIfChanged(banner, shouldShowBanner, "bannerVisible");
+    setStateClassIfChanged(
+      banner,
+      stateClass(warm.runtimeState),
+      "bannerClass",
+    );
+    setTextIfChanged(
+      bannerState,
+      stateText(warm.runtimeState),
+      "bannerStateText",
+    );
+    setTextIfChanged(
+      bannerCountdown,
+      warm.warmupActive ? `${warm.countdown}s` : "--",
+      "bannerCountdownText",
+    );
     if (bannerReason) {
       if (warm.runtimeState === "WAITING_SENSOR") {
-        bannerReason.textContent =
-          "Pastikan sensor disentuh agar warmup dimulai.";
+        setTextIfChanged(
+          bannerReason,
+          "Pastikan sensor disentuh agar warmup dimulai.",
+          "bannerReasonText",
+        );
       } else if (warm.warmupActive) {
-        bannerReason.textContent = "Stabilisasi data model sedang berlangsung.";
+        setTextIfChanged(
+          bannerReason,
+          "Stabilisasi data model sedang berlangsung.",
+          "bannerReasonText",
+        );
       } else {
-        bannerReason.textContent = warm.runtimeReason;
+        setTextIfChanged(bannerReason, warm.runtimeReason, "bannerReasonText");
       }
     }
 
     const pill = document.getElementById(opts.pillId || "runtime-state-pill");
     if (pill) {
-      pill.textContent = stateText(warm.runtimeState);
-      pill.classList.remove(
-        "is-running",
-        "is-warmup",
-        "is-waiting",
-        "is-init",
-        "is-degraded",
-      );
-      pill.classList.add(stateClass(warm.runtimeState));
+      setTextIfChanged(pill, stateText(warm.runtimeState), "pillText");
+      setStateClassIfChanged(pill, stateClass(warm.runtimeState), "pillClass");
     }
 
     const showOverlay = opts.showOverlay !== false;
@@ -134,15 +184,17 @@
     const shouldShowOverlay =
       showOverlay && warm.warmupActive && warm.remaining >= overlayMinSeconds;
 
-    if (overlay) {
-      overlay.classList.toggle("show", shouldShowOverlay);
-    }
-    if (overlayNumber) {
-      overlayNumber.textContent = String(Math.max(1, warm.countdown));
-    }
-    if (overlayLabel) {
-      overlayLabel.textContent = "Model warmup in progress";
-    }
+    setShowIfChanged(overlay, shouldShowOverlay, "overlayVisible");
+    setTextIfChanged(
+      overlayNumber,
+      String(Math.max(1, warm.countdown)),
+      "overlayNumberText",
+    );
+    setTextIfChanged(
+      overlayLabel,
+      "Model warmup in progress",
+      "overlayLabelText",
+    );
 
     return warm;
   }

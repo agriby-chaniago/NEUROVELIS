@@ -9,6 +9,15 @@
 const MAX_POINTS = 60; // rolling window (60 data points ≈ 60 s at 1 Hz)
 const RECONNECT_MS = 3000; // reconnect delay after SSE error
 
+const elCache = new Map();
+
+function byId(id) {
+  if (!elCache.has(id)) {
+    elCache.set(id, document.getElementById(id) || null);
+  }
+  return elCache.get(id);
+}
+
 // ── Chart defaults ────────────────────────────────────────────────────────
 Chart.defaults.color = "#52697e";
 Chart.defaults.borderColor = "#d0d9e4";
@@ -142,13 +151,16 @@ const chartGSR = new Chart(document.getElementById("chart-gsr"), {
 
 // ── Metric card helpers ───────────────────────────────────────────────────
 function setMetric(id, value, decimals = 1, valid = true) {
-  const el = document.getElementById(id);
+  const el = byId(id);
   if (!el) return;
   el.textContent =
     value !== null && value !== undefined
       ? Number(value).toFixed(decimals)
       : "—";
-  el.closest(".metric-card").classList.toggle("invalid", !valid);
+  const card = el.closest(".metric-card");
+  if (card) {
+    card.classList.toggle("invalid", !valid);
+  }
 }
 
 function updateCards(d) {
@@ -172,10 +184,11 @@ function updateCards(d) {
 }
 
 // ── Alert banner ──────────────────────────────────────
-const alertBanner = document.getElementById("alert-banner");
-const alertText = document.getElementById("alert-text");
+const alertBanner = byId("alert-banner");
+const alertText = byId("alert-text");
 
 function updateAlert(d) {
+  if (!alertBanner || !alertText) return;
   if (d.alert_active) {
     alertText.textContent =
       "PERINGATAN: " + (d.alert_reasons || "kondisi bahaya terdeteksi");
@@ -186,13 +199,139 @@ function updateAlert(d) {
 }
 
 // ── SSE connection ────────────────────────────────────────────────────────
-const statusDot = document.getElementById("status-dot");
-const lastUpdate = document.getElementById("last-update");
-const footerTs = document.getElementById("footer-ts");
+const statusDot = byId("status-dot");
+const lastUpdate = byId("last-update");
+const footerTs = byId("footer-ts");
 const sseClient = window.NeurosenseSSEClient || null;
 const chartUtils = window.NeurosenseChartUtils || null;
 let dashboardStream = null;
 let unregisterChartResize = null;
+let pendingRealtimeEvent = null;
+let realtimeFlushRafId = null;
+let dashboardGuardrailLevel = 0;
+let slowFrameStreak = 0;
+let stableFrameStreak = 0;
+let chartUpdateCycle = 0;
+
+const metricCards = Array.from(document.querySelectorAll(".metric-card"));
+const diskWarn = byId("disk-warning");
+const diskText = byId("disk-warning-text");
+const fpsBadge = byId("camera-fps");
+
+function updateFrameGuardrail(frameCostMs) {
+  if (!Number.isFinite(frameCostMs)) return;
+  if (frameCostMs > 18) {
+    slowFrameStreak += 1;
+    stableFrameStreak = 0;
+  } else {
+    stableFrameStreak += 1;
+    slowFrameStreak = 0;
+  }
+
+  if (slowFrameStreak >= 4 && dashboardGuardrailLevel < 2) {
+    dashboardGuardrailLevel += 1;
+    slowFrameStreak = 0;
+  }
+  if (stableFrameStreak >= 40 && dashboardGuardrailLevel > 0) {
+    dashboardGuardrailLevel -= 1;
+    stableFrameStreak = 0;
+  }
+}
+
+function shouldUpdateChart(index) {
+  if (dashboardGuardrailLevel === 0) return true;
+  if (dashboardGuardrailLevel === 1) {
+    const phase = chartUpdateCycle % 2;
+    return phase === 0 ? index < 2 : index >= 2;
+  }
+  const phase = chartUpdateCycle % 3;
+  if (phase === 0) return index < 2;
+  if (phase === 1) return index === 2;
+  return index === 3;
+}
+
+function updateChartsWithGuardrail(d) {
+  pushLabel(d.timestamp_utc);
+  pushVal(buf.hr, d.heart_rate_bpm);
+  pushVal(buf.spo2, d.spo2_percent);
+  pushVal(buf.temp, d.temperature_celsius);
+  pushVal(buf.hum, d.humidity_percent);
+  pushVal(buf.pres, d.pressure_hpa);
+  pushVal(buf.gsr, d.gsr_conductance_us);
+  pushVal(buf.ads, d.ads1_ch0_V);
+
+  const charts = [chartHR, chartEnv, chartPres, chartGSR];
+  for (let i = 0; i < charts.length; i += 1) {
+    if (shouldUpdateChart(i)) {
+      charts[i].update("none");
+    }
+  }
+  chartUpdateCycle += 1;
+}
+
+function applyRealtimeEvent(payload) {
+  const d = payload.data;
+  const warm = payload.warm;
+
+  updateChartsWithGuardrail(d);
+  updateCards(d);
+  updateAlert(d);
+
+  for (const card of metricCards) {
+    card.classList.toggle("stale", !!d.sensor_stale);
+  }
+
+  if (diskWarn && diskText && d.disk_free_gb !== null && d.disk_free_gb !== undefined) {
+    if (d.disk_free_gb < 2) {
+      diskText.textContent = `Disk space low — ${d.disk_free_gb} GB remaining. Recording may fail soon.`;
+      diskWarn.classList.add("visible");
+    } else {
+      diskWarn.classList.remove("visible");
+    }
+  }
+
+  if (fpsBadge) {
+    fpsBadge.textContent =
+      d.camera_fps !== null && d.camera_fps !== undefined
+        ? d.camera_fps.toFixed(1) + " fps"
+        : "— fps";
+  }
+
+  const now = new Date().toLocaleTimeString();
+  if (warm && warm.warmupActive) {
+    if (lastUpdate) {
+      lastUpdate.textContent = `Last update: ${now} - Warmup ${warm.countdown}s`;
+    }
+  } else if (lastUpdate) {
+    lastUpdate.textContent = `Last update: ${now}`;
+  }
+  if (footerTs) {
+    footerTs.textContent = d.timestamp_utc || now;
+  }
+  syncStatusDot(warm);
+}
+
+function flushRealtimeFrame() {
+  realtimeFlushRafId = null;
+  if (!pendingRealtimeEvent) return;
+
+  const frameStart = performance.now();
+  const payload = pendingRealtimeEvent;
+  pendingRealtimeEvent = null;
+  applyRealtimeEvent(payload);
+  updateFrameGuardrail(performance.now() - frameStart);
+
+  if (pendingRealtimeEvent) {
+    realtimeFlushRafId = window.requestAnimationFrame(flushRealtimeFrame);
+  }
+}
+
+function scheduleRealtimeEvent(data, warm) {
+  pendingRealtimeEvent = { data, warm };
+  if (realtimeFlushRafId === null) {
+    realtimeFlushRafId = window.requestAnimationFrame(flushRealtimeFrame);
+  }
+}
 
 function syncStatusDot(warm) {
   if (!statusDot) return;
@@ -223,72 +362,18 @@ function connect() {
     pauseWhenHidden: true,
     parseJson: true,
     onOpen: () => {
-      statusDot.className = "live";
+      if (statusDot) statusDot.className = "live";
       console.info("[NEUROSENSE] SSE connected.");
     },
     onJson: (d) => {
       const warm = warmupUI
         ? warmupUI.apply(d, { showOverlay: true, overlayMinSeconds: 0.2 })
         : null;
-
-      // Update charts
-      pushLabel(d.timestamp_utc);
-      pushVal(buf.hr, d.heart_rate_bpm);
-      pushVal(buf.spo2, d.spo2_percent);
-      pushVal(buf.temp, d.temperature_celsius);
-      pushVal(buf.hum, d.humidity_percent);
-      pushVal(buf.pres, d.pressure_hpa);
-      pushVal(buf.gsr, d.gsr_conductance_us);
-      pushVal(buf.ads, d.ads1_ch0_V);
-
-      chartHR.update();
-      chartEnv.update();
-      chartPres.update();
-      chartGSR.update();
-
-      // Update metric cards
-      updateCards(d);
-      updateAlert(d);
-
-      // Sensor stale: grey out all metric cards when sensors stop updating
-      document.querySelectorAll(".metric-card").forEach((card) => {
-        card.classList.toggle("stale", !!d.sensor_stale);
-      });
-
-      // Disk space warning (threshold: < 2 GB)
-      const diskWarn = document.getElementById("disk-warning");
-      const diskText = document.getElementById("disk-warning-text");
-      if (diskWarn && d.disk_free_gb !== null && d.disk_free_gb !== undefined) {
-        if (d.disk_free_gb < 2) {
-          diskText.textContent = `Disk space low — ${d.disk_free_gb} GB remaining. Recording may fail soon.`;
-          diskWarn.classList.add("visible");
-        } else {
-          diskWarn.classList.remove("visible");
-        }
-      }
-
-      // Update camera FPS badge
-      const fpsBadge = document.getElementById("camera-fps");
-      if (fpsBadge) {
-        fpsBadge.textContent =
-          d.camera_fps !== null && d.camera_fps !== undefined
-            ? d.camera_fps.toFixed(1) + " fps"
-            : "— fps";
-      }
-
-      // Update timestamps
-      const now = new Date().toLocaleTimeString();
-      if (warm && warm.warmupActive) {
-        lastUpdate.textContent = `Last update: ${now} - Warmup ${warm.countdown}s`;
-      } else {
-        lastUpdate.textContent = `Last update: ${now}`;
-      }
-      footerTs.textContent = d.timestamp_utc || now;
-      syncStatusDot(warm);
+      scheduleRealtimeEvent(d, warm);
     },
     onError: () => {
-      statusDot.className = "error";
-      lastUpdate.textContent = "Connection lost — reconnecting…";
+      if (statusDot) statusDot.className = "error";
+      if (lastUpdate) lastUpdate.textContent = "Connection lost — reconnecting…";
     },
   });
 }
@@ -305,13 +390,17 @@ if (chartUtils) {
 
 window.addEventListener("beforeunload", () => {
   if (dashboardStream) dashboardStream.close();
+  if (realtimeFlushRafId !== null) {
+    window.cancelAnimationFrame(realtimeFlushRafId);
+    realtimeFlushRafId = null;
+  }
   if (unregisterChartResize) unregisterChartResize();
 });
 
 // ── Camera status ─────────────────────────────────────────────────────────
-const camStatus = document.getElementById("camera-status");
-const camSection = document.getElementById("camera-section");
-const cameraFeed = document.getElementById("camera-feed");
+const camStatus = byId("camera-status");
+const camSection = byId("camera-section");
+const cameraFeed = byId("camera-feed");
 const CAMERA_RETRY_MS = 2500;
 let cameraRetryTimer = null;
 
@@ -319,7 +408,7 @@ function scheduleCameraRetry() {
   if (cameraRetryTimer !== null) return;
   cameraRetryTimer = window.setTimeout(() => {
     cameraRetryTimer = null;
-    const feed = document.getElementById("camera-feed");
+    const feed = byId("camera-feed");
     if (!feed) return;
     feed.style.display = "";
     feed.src = `/camera/stream?t=${Date.now()}`;
@@ -344,7 +433,7 @@ function onCameraError() {
     camStatus.className = "error";
   }
   // Temporarily hide frame while stream is reconnecting.
-  const feed = document.getElementById("camera-feed");
+  const feed = byId("camera-feed");
   if (feed) feed.style.display = "none";
   scheduleCameraRetry();
 }
@@ -359,8 +448,9 @@ bindCameraFeedEvents();
 
 // ── GSR Recalibration ─────────────────────────────────────────────────────
 async function recalibrateGSR() {
-  const btn = document.getElementById("btn-recal");
-  const status = document.getElementById("recal-status");
+  const btn = byId("btn-recal");
+  const status = byId("recal-status");
+  if (!btn || !status) return;
 
   btn.disabled = true;
   status.className = "busy";

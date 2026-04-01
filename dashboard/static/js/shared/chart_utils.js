@@ -23,6 +23,7 @@
     let timer = null;
     let rafId = null;
     let observer = null;
+    let lastScheduleAt = 0;
 
     function triggerResize() {
       if (document.visibilityState === "hidden") return;
@@ -36,6 +37,12 @@
     }
 
     function scheduleResize() {
+      const now = performance.now();
+      if (now - lastScheduleAt < 24) {
+        return;
+      }
+      lastScheduleAt = now;
+
       if (timer !== null) {
         window.clearTimeout(timer);
       }

@@ -3,6 +3,21 @@
 const MAX_POINTS = 60;
 const RECONNECT_MS = 3000;
 const CLASS_ORDER = ["anxiety", "stress", "depression"];
+const STREAM_HZ_APPROX = 2;
+const TRAIL_SECONDS_DEFAULT = 3;
+const TRAIL_POINTS_DEFAULT = Math.max(
+  2,
+  Math.round(TRAIL_SECONDS_DEFAULT * STREAM_HZ_APPROX),
+);
+
+const elCache = new Map();
+
+function byId(id) {
+  if (!elCache.has(id)) {
+    elCache.set(id, document.getElementById(id) || null);
+  }
+  return elCache.get(id);
+}
 
 Chart.defaults.color = "#52697e";
 Chart.defaults.borderColor = "#d0d9e4";
@@ -14,6 +29,19 @@ const labels = [];
 const anxietyTrendBuf = [];
 const stressTrendBuf = [];
 const depressionTrendBuf = [];
+const anxietyTrailBuf = [];
+const stressTrailBuf = [];
+const depressionTrailBuf = [];
+
+let currentProbDisplay = [0, 0, 0];
+let pendingChartEvent = null;
+let chartTransition = null;
+let chartRafId = null;
+let guardrailLevel = 0;
+let slowFrameStreak = 0;
+let stableFrameStreak = 0;
+let adaptiveTrailPoints = TRAIL_POINTS_DEFAULT;
+let adaptiveInterpolationMs = 180;
 
 function pushLabel(ts) {
   const d = ts ? new Date(ts) : new Date();
@@ -81,11 +109,31 @@ const confChart = new Chart(document.getElementById("chart-conf"), {
         fill: false,
       },
       {
+        label: "Anxiety Trail",
+        data: anxietyTrailBuf,
+        borderColor: "rgba(26, 95, 173, 0.35)",
+        borderWidth: 1,
+        borderDash: [4, 3],
+        pointRadius: 0,
+        tension: 0.3,
+        fill: false,
+      },
+      {
         label: "Stress",
         data: stressTrendBuf,
         borderColor: "#c25d00",
         backgroundColor: "#c25d0022",
         borderWidth: 1.5,
+        pointRadius: 0,
+        tension: 0.3,
+        fill: false,
+      },
+      {
+        label: "Stress Trail",
+        data: stressTrailBuf,
+        borderColor: "rgba(194, 93, 0, 0.35)",
+        borderWidth: 1,
+        borderDash: [4, 3],
         pointRadius: 0,
         tension: 0.3,
         fill: false,
@@ -100,13 +148,34 @@ const confChart = new Chart(document.getElementById("chart-conf"), {
         tension: 0.3,
         fill: false,
       },
+      {
+        label: "Depression Trail",
+        data: depressionTrailBuf,
+        borderColor: "rgba(183, 28, 28, 0.35)",
+        borderWidth: 1,
+        borderDash: [4, 3],
+        pointRadius: 0,
+        tension: 0.3,
+        fill: false,
+      },
     ],
   },
   options: {
     animation: false,
     responsive: true,
     maintainAspectRatio: false,
-    plugins: { legend: { display: true, position: "bottom" } },
+    plugins: {
+      legend: {
+        display: true,
+        position: "bottom",
+        labels: {
+          filter: (item, chartData) => {
+            const ds = chartData.datasets[item.datasetIndex] || {};
+            return !String(ds.label || "").endsWith("Trail");
+          },
+        },
+      },
+    },
     scales: {
       y: {
         min: 0,
@@ -135,14 +204,11 @@ let unregisterChartResize = null;
 
 const MESH_STYLE = {
   smoothingAlpha: 0.72,
-  boxColor: "255, 48, 48",
-  boxAlpha: 0.95,
+  boxColorRGBA: "rgba(255, 48, 48, 0.95)",
   boxWidth: 2.2,
-  contourColor: "87, 255, 87",
-  contourAlpha: 0.96,
+  contourColorRGBA: "rgba(87, 255, 87, 0.96)",
   contourWidth: 1.4,
-  pointColor: "255, 48, 48",
-  pointAlpha: 0.88,
+  pointColorRGBA: "rgba(255, 48, 48, 0.88)",
   pointRadius: 1.35,
 };
 
@@ -175,6 +241,7 @@ let meshEdges = [];
 let previousProjected = null;
 let meshDisplayWidth = 0;
 let meshDisplayHeight = 0;
+let meshNeedsResizeSync = true;
 
 function syncMeshCanvasSize() {
   if (!meshCanvas || !cameraFeed) return;
@@ -201,7 +268,10 @@ function syncMeshCanvasSize() {
 
 function clearMeshOverlay() {
   if (!meshCanvas || !meshCtx) return;
-  syncMeshCanvasSize();
+  if (meshNeedsResizeSync) {
+    syncMeshCanvasSize();
+    meshNeedsResizeSync = false;
+  }
   meshCtx.clearRect(0, 0, meshDisplayWidth, meshDisplayHeight);
   previousProjected = null;
 }
@@ -323,7 +393,7 @@ function drawRotatedBoundingBox(projected) {
     [-hw, hh],
   ].map(([x, y]) => [cx + x * cosA - y * sinA, cy + x * sinA + y * cosA]);
 
-  meshCtx.strokeStyle = `rgba(${MESH_STYLE.boxColor}, ${MESH_STYLE.boxAlpha})`;
+  meshCtx.strokeStyle = MESH_STYLE.boxColorRGBA;
   meshCtx.lineWidth = MESH_STYLE.boxWidth;
   meshCtx.beginPath();
   meshCtx.moveTo(corners[0][0], corners[0][1]);
@@ -336,7 +406,7 @@ function drawRotatedBoundingBox(projected) {
 
 function drawMeshPoints(projected) {
   if (!meshCtx) return;
-  meshCtx.fillStyle = `rgba(${MESH_STYLE.pointColor}, ${MESH_STYLE.pointAlpha})`;
+  meshCtx.fillStyle = MESH_STYLE.pointColorRGBA;
   for (let i = 0; i < projected.length; i += 1) {
     const p = projected[i];
     if (!p) continue;
@@ -348,14 +418,17 @@ function drawMeshPoints(projected) {
 
 function drawFaceMesh(landmarks) {
   if (!meshCanvas || !meshCtx) return;
-  syncMeshCanvasSize();
+  if (meshNeedsResizeSync) {
+    syncMeshCanvasSize();
+    meshNeedsResizeSync = false;
+  }
   meshCtx.clearRect(0, 0, meshDisplayWidth, meshDisplayHeight);
   if (!Array.isArray(landmarks) || landmarks.length === 0) return;
 
   const projected = smoothProjected(projectLandmarks(landmarks));
   drawRotatedBoundingBox(projected);
 
-  meshCtx.strokeStyle = `rgba(${MESH_STYLE.contourColor}, ${MESH_STYLE.contourAlpha})`;
+  meshCtx.strokeStyle = MESH_STYLE.contourColorRGBA;
   meshCtx.lineWidth = MESH_STYLE.contourWidth;
   drawContourPath(projected, FACE_OVAL);
   drawContourPath(projected, LEFT_EYE_RING);
@@ -385,9 +458,88 @@ async function loadMeshTopology() {
 }
 
 function setText(id, value) {
-  const el = document.getElementById(id);
+  const el = byId(id);
   if (!el) return;
   el.textContent = value;
+}
+
+function setClass(id, className) {
+  const el = byId(id);
+  if (!el) return;
+  el.className = className;
+}
+
+function clamp01(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(1, n));
+}
+
+function readProbabilities(data) {
+  return [
+    clamp01(data.model_chance_anxiety ?? data.model_probs_anxiety ?? 0),
+    clamp01(data.model_chance_stress ?? data.model_probs_stress ?? 0),
+    clamp01(data.model_chance_depression ?? data.model_probs_depression ?? 0),
+  ];
+}
+
+function rebuildTrail(source, trail, keepPoints) {
+  const keep = Math.max(2, keepPoints);
+  const start = Math.max(0, source.length - keep);
+  trail.length = source.length;
+  for (let i = 0; i < source.length; i += 1) {
+    trail[i] = i >= start ? source[i] : NaN;
+  }
+}
+
+function tuneAdaptiveProfile(warm) {
+  const state = String(warm?.runtimeState || "DEGRADED").toUpperCase();
+  if (state === "RUNNING") {
+    MESH_STYLE.smoothingAlpha = 0.82;
+    adaptiveInterpolationMs = 170;
+    adaptiveTrailPoints = 6;
+  } else if (state === "WARMUP") {
+    MESH_STYLE.smoothingAlpha = 0.64;
+    adaptiveInterpolationMs = 220;
+    adaptiveTrailPoints = 8;
+  } else if (state === "WAITING_SENSOR") {
+    MESH_STYLE.smoothingAlpha = 0.6;
+    adaptiveInterpolationMs = 240;
+    adaptiveTrailPoints = 8;
+  } else {
+    MESH_STYLE.smoothingAlpha = 0.9;
+    adaptiveInterpolationMs = 110;
+    adaptiveTrailPoints = 4;
+  }
+
+  if (guardrailLevel >= 1) {
+    adaptiveInterpolationMs = Math.max(80, adaptiveInterpolationMs - 40);
+    adaptiveTrailPoints = Math.max(2, adaptiveTrailPoints - 2);
+  }
+  if (guardrailLevel >= 2) {
+    adaptiveInterpolationMs = Math.max(60, adaptiveInterpolationMs - 20);
+    adaptiveTrailPoints = Math.max(2, adaptiveTrailPoints - 1);
+  }
+}
+
+function updateFrameGuardrail(frameCostMs) {
+  if (!Number.isFinite(frameCostMs)) return;
+  if (frameCostMs > 24) {
+    slowFrameStreak += 1;
+    stableFrameStreak = 0;
+  } else {
+    stableFrameStreak += 1;
+    slowFrameStreak = 0;
+  }
+
+  if (slowFrameStreak >= 4 && guardrailLevel < 2) {
+    guardrailLevel += 1;
+    slowFrameStreak = 0;
+  }
+  if (stableFrameStreak >= 45 && guardrailLevel > 0) {
+    guardrailLevel -= 1;
+    stableFrameStreak = 0;
+  }
 }
 
 function fmtNumber(value, digits = 1) {
@@ -459,8 +611,9 @@ function updateSignalStatus(data, warm) {
 }
 
 function updateAlert(data) {
-  const banner = document.getElementById("model-alert");
-  const text = document.getElementById("model-alert-text");
+  const banner = byId("model-alert");
+  const text = byId("model-alert-text");
+  if (!banner || !text) return;
   const active = !!data.model_alert_active;
   if (active) {
     const msg = data.model_alert_reasons || "MODEL ALERT";
@@ -508,20 +661,78 @@ function updateCards(data, warm) {
   );
 }
 
-function updateCharts(data) {
-  const probs = [
-    Number(data.model_chance_anxiety ?? data.model_probs_anxiety ?? 0),
-    Number(data.model_chance_stress ?? data.model_probs_stress ?? 0),
-    Number(data.model_chance_depression ?? data.model_probs_depression ?? 0),
-  ];
-  probChart.data.datasets[0].data = probs;
-  probChart.update();
+function applyChartFrame(displayProbs) {
+  probChart.data.datasets[0].data = displayProbs;
+  probChart.update("none");
+}
 
-  pushLabel(data.model_timestamp_utc || data.timestamp_utc);
+function commitTrendPoint(probs, timestamp) {
+  pushLabel(timestamp);
   pushVal(anxietyTrendBuf, probs[0]);
   pushVal(stressTrendBuf, probs[1]);
   pushVal(depressionTrendBuf, probs[2]);
-  confChart.update();
+
+  rebuildTrail(anxietyTrendBuf, anxietyTrailBuf, adaptiveTrailPoints);
+  rebuildTrail(stressTrendBuf, stressTrailBuf, adaptiveTrailPoints);
+  rebuildTrail(depressionTrendBuf, depressionTrailBuf, adaptiveTrailPoints);
+
+  confChart.update("none");
+}
+
+function flushChartFrame(rafTs) {
+  chartRafId = null;
+  const frameStart = performance.now();
+
+  if (pendingChartEvent) {
+    const event = pendingChartEvent;
+    pendingChartEvent = null;
+    chartTransition = {
+      from: currentProbDisplay.slice(),
+      to: event.probs,
+      ts: event.ts,
+      startTs: rafTs,
+      durationMs: adaptiveInterpolationMs,
+    };
+  }
+
+  if (chartTransition) {
+    const duration = Math.max(60, chartTransition.durationMs);
+    const progress = Math.max(
+      0,
+      Math.min(1, (rafTs - chartTransition.startTs) / duration),
+    );
+    const eased = guardrailLevel >= 2 ? progress : 1 - Math.pow(1 - progress, 2);
+    const displayProbs = chartTransition.from.map((start, index) => {
+      const target = chartTransition.to[index];
+      return start + (target - start) * eased;
+    });
+
+    applyChartFrame(displayProbs);
+    currentProbDisplay = displayProbs;
+
+    if (progress >= 1) {
+      currentProbDisplay = chartTransition.to.slice();
+      commitTrendPoint(currentProbDisplay, chartTransition.ts);
+      chartTransition = null;
+    }
+  }
+
+  updateFrameGuardrail(performance.now() - frameStart);
+
+  if (chartTransition || pendingChartEvent) {
+    chartRafId = window.requestAnimationFrame(flushChartFrame);
+  }
+}
+
+function queueChartUpdate(data) {
+  pendingChartEvent = {
+    probs: readProbabilities(data),
+    ts: data.model_timestamp_utc || data.timestamp_utc,
+  };
+
+  if (chartRafId === null) {
+    chartRafId = window.requestAnimationFrame(flushChartFrame);
+  }
 }
 
 function connect() {
@@ -535,18 +746,20 @@ function connect() {
     pauseWhenHidden: true,
     parseJson: true,
     onOpen: () => {
-      statusDot.className = "live";
-      lastUpdate.textContent = "Model stream connected";
+      if (statusDot) statusDot.className = "live";
+      if (lastUpdate) lastUpdate.textContent = "Model stream connected";
     },
     onJson: (data) => {
       const warm = warmupUI
         ? warmupUI.apply(data, { showOverlay: true, overlayMinSeconds: 0.2 })
         : null;
 
+      tuneAdaptiveProfile(warm);
+
       updateCards(data, warm);
       updateSignalStatus(data, warm);
       updateAlert(data);
-      updateCharts(data);
+      queueChartUpdate(data);
 
       if (data.camera_fps !== null && data.camera_fps !== undefined) {
         setText("camera-fps", `${Number(data.camera_fps).toFixed(1)} fps`);
@@ -554,21 +767,24 @@ function connect() {
 
       const now = new Date().toLocaleTimeString();
       if (warm && warm.warmupActive) {
-        statusDot.className = "warmup";
-        lastUpdate.textContent = `Warmup in progress - ${warm.countdown}s`;
+        if (statusDot) statusDot.className = "warmup";
+        if (lastUpdate)
+          lastUpdate.textContent = `Warmup in progress - ${warm.countdown}s`;
       } else if (warm && warm.runtimeState === "RUNNING") {
-        statusDot.className = "live";
-        lastUpdate.textContent = `Last update: ${now}`;
+        if (statusDot) statusDot.className = "live";
+        if (lastUpdate) lastUpdate.textContent = `Last update: ${now}`;
       } else {
-        statusDot.className = "error";
-        lastUpdate.textContent = "Waiting for stable signal...";
+        if (statusDot) statusDot.className = "error";
+        if (lastUpdate) lastUpdate.textContent = "Waiting for stable signal...";
       }
-      footerTs.textContent =
-        data.model_timestamp_utc || data.timestamp_utc || now;
+      if (footerTs) {
+        footerTs.textContent =
+          data.model_timestamp_utc || data.timestamp_utc || now;
+      }
     },
     onError: () => {
-      statusDot.className = "error";
-      lastUpdate.textContent = "Connection lost — reconnecting...";
+      if (statusDot) statusDot.className = "error";
+      if (lastUpdate) lastUpdate.textContent = "Connection lost — reconnecting...";
     },
   });
 }
@@ -602,9 +818,9 @@ if (chartUtils) {
   ]);
 }
 
-const camStatus = document.getElementById("camera-status");
-const camSection = document.getElementById("camera-section");
-const modelCameraFeed = document.getElementById("camera-feed");
+const camStatus = byId("camera-status");
+const camSection = byId("camera-section");
+const modelCameraFeed = byId("camera-feed");
 const CAMERA_RETRY_MS = 2500;
 let cameraRetryTimer = null;
 
@@ -612,7 +828,7 @@ function scheduleCameraRetry() {
   if (cameraRetryTimer !== null) return;
   cameraRetryTimer = window.setTimeout(() => {
     cameraRetryTimer = null;
-    const feed = document.getElementById("camera-feed");
+    const feed = byId("camera-feed");
     if (!feed) return;
     feed.style.display = "";
     feed.src = `/camera/stream?t=${Date.now()}`;
@@ -629,6 +845,7 @@ function onCameraLoad() {
     camStatus.className = "";
   }
   if (camSection) camSection.style.display = "";
+  meshNeedsResizeSync = true;
   syncMeshCanvasSize();
 }
 
@@ -638,7 +855,7 @@ function onCameraError() {
     camStatus.className = "error";
   }
   clearMeshOverlay();
-  const feed = document.getElementById("camera-feed");
+  const feed = byId("camera-feed");
   if (feed) feed.style.display = "none";
   scheduleCameraRetry();
 }
@@ -651,10 +868,23 @@ function bindCameraFeedEvents() {
 
 bindCameraFeedEvents();
 
-window.addEventListener("resize", syncMeshCanvasSize);
+window.addEventListener("resize", () => {
+  meshNeedsResizeSync = true;
+  syncMeshCanvasSize();
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") {
+    meshNeedsResizeSync = true;
+  }
+});
 
 window.addEventListener("beforeunload", () => {
   if (modelStream) modelStream.close();
   if (meshStream) meshStream.close();
+  if (chartRafId !== null) {
+    window.cancelAnimationFrame(chartRafId);
+    chartRafId = null;
+  }
   if (unregisterChartResize) unregisterChartResize();
 });
