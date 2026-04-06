@@ -283,6 +283,7 @@ class TestBuzzerAlerts:
     def test_spo2_beeps_after_consecutive_hits(self, monkeypatch):
         """Critical SpO2 alert should beep only after configured consecutive detections."""
         monkeypatch.setattr(config, "BUZZER_MIN_CONSECUTIVE_HITS", 2)
+        monkeypatch.setattr(config, "BUZZER_MIN_CONSECUTIVE_HITS_SPO2", 2)
         monkeypatch.setattr(config, "BUZZER_BEEP_ON_SPO2", True)
 
         b = Buzzer()
@@ -305,6 +306,7 @@ class TestBuzzerAlerts:
     def test_consecutive_hits_reset_when_condition_clears(self, monkeypatch):
         """Debounce streak must reset when signal returns to normal."""
         monkeypatch.setattr(config, "BUZZER_MIN_CONSECUTIVE_HITS", 2)
+        monkeypatch.setattr(config, "BUZZER_MIN_CONSECUTIVE_HITS_SPO2", 2)
         monkeypatch.setattr(config, "BUZZER_BEEP_ON_SPO2", True)
 
         b = Buzzer()
@@ -331,6 +333,54 @@ class TestBuzzerAlerts:
             b.check_and_alert(low)     # hit 1 again, still no beep
 
         beep_mock.assert_not_called()
+
+    def test_sensor_error_beeps_once_for_same_error_signature(self, monkeypatch):
+        """With change-only policy enabled, persistent same sensor_error should not beep repeatedly."""
+        monkeypatch.setattr(config, "BUZZER_BEEP_ON_SENSOR_ERROR", True)
+        monkeypatch.setattr(config, "BUZZER_SENSOR_ERROR_BEEP_ON_CHANGE_ONLY", True)
+
+        b = Buzzer()
+        b._gpio_handle = object()
+
+        data = {
+            "heart_rate_bpm": 80,
+            "hr_valid": True,
+            "spo2_percent": 97,
+            "spo2_valid": True,
+            "gsr_conductance_us": 5.0,
+            "sensor_error": "max30102",
+        }
+
+        with patch.object(b, "_beep_sequence") as beep_mock:
+            b.check_and_alert(data)  # first appearance -> beep
+            b.check_and_alert(data)  # unchanged signature -> no new beep
+
+        assert beep_mock.call_count == 1
+
+    def test_sensor_error_beeps_again_when_error_signature_changes(self, monkeypatch):
+        """A new sensor_error signature should trigger a fresh beep event."""
+        monkeypatch.setattr(config, "BUZZER_BEEP_ON_SENSOR_ERROR", True)
+        monkeypatch.setattr(config, "BUZZER_SENSOR_ERROR_BEEP_ON_CHANGE_ONLY", True)
+
+        b = Buzzer()
+        b._gpio_handle = object()
+
+        data_a = {
+            "heart_rate_bpm": 80,
+            "hr_valid": True,
+            "spo2_percent": 97,
+            "spo2_valid": True,
+            "gsr_conductance_us": 5.0,
+            "sensor_error": "max30102",
+        }
+        data_b = dict(data_a)
+        data_b["sensor_error"] = "max30102, gsr"
+
+        with patch.object(b, "_beep_sequence") as beep_mock:
+            b.check_and_alert(data_a)
+            b.check_and_alert(data_b)
+
+        assert beep_mock.call_count == 2
 
 
 class TestBuzzerSetup:

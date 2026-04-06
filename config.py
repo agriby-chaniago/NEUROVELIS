@@ -153,6 +153,20 @@ BUZZER_BEEP_ON_SENSOR_ERROR = True
 # Ini menekan false-alarm akibat noise pembacaan sesaat.
 BUZZER_MIN_CONSECUTIVE_HITS = 3
 
+# Khusus SpO2: pakai debounce lebih ketat dari default karena paling sensitif
+# terhadap noise optik / gerakan jari.
+BUZZER_MIN_CONSECUTIVE_HITS_SPO2 = 4
+
+# SpO2 beep hanya diizinkan jika HR valid dan masih masuk rentang fisiologis.
+# Mencegah beep dari nilai SpO2 stale/noisy saat finger contact buruk.
+BUZZER_REQUIRE_HR_FOR_SPO2_BEEP = True
+BUZZER_SPO2_HR_MIN_BPM = 45
+BUZZER_SPO2_HR_MAX_BPM = 170
+
+# SENSOR_ERROR beep default: bunyi sekali saat error muncul/berubah,
+# bukan berulang selama error state masih sama.
+BUZZER_SENSOR_ERROR_BEEP_ON_CHANGE_ONLY = True
+
 # ─── Alert Thresholds ─────────────────────────────────────────────────────
 # Buzzer akan berbunyi jika nilai sensor melewati batas ini.
 # Set ke None untuk menonaktifkan threshold tertentu.

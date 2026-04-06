@@ -51,6 +51,8 @@ class Buzzer:
         self._last_alert_time: dict[str, float] = {}
         # Per-condition consecutive hit counters to suppress transient noise.
         self._condition_hits: dict[str, int] = {}
+        # Track active sensor_error signature so beep can fire on change only.
+        self._sensor_error_signature: str | None = None
         self._lock = threading.Lock()   # prevent concurrent beep calls
         self._active = False            # is buzzer currently ON?
 
@@ -149,6 +151,16 @@ class Buzzer:
         """
         reasons = []
 
+        hr = data.get("heart_rate_bpm")
+        hr_valid = bool(data.get("hr_valid", False))
+        sensor_error_active = bool(data.get("sensor_error"))
+
+        hr_f: float | None
+        try:
+            hr_f = float(hr) if hr is not None else None
+        except (TypeError, ValueError):
+            hr_f = None
+
         # ── SpO2 (highest priority — check first) ─────────────────────────
         spo2 = data.get("spo2_percent")
         spo2_valid = data.get("spo2_valid", False)
@@ -160,18 +172,45 @@ class Buzzer:
         )
         if spo2_low:
             reasons.append(f"SPO2_LOW:{spo2:.1f}%<{config.ALERT_SPO2_LOW}")
-            if getattr(config, "BUZZER_BEEP_ON_SPO2", True) and self._record_hit("SPO2"):
+
+            require_hr = bool(getattr(config, "BUZZER_REQUIRE_HR_FOR_SPO2_BEEP", True))
+            hr_min = float(getattr(config, "BUZZER_SPO2_HR_MIN_BPM", 45.0))
+            hr_max = float(getattr(config, "BUZZER_SPO2_HR_MAX_BPM", 170.0))
+            hr_ok_for_spo2 = bool(
+                hr_valid
+                and hr_f is not None
+                and hr_min <= hr_f <= hr_max
+            )
+            spo2_min_hits = max(
+                1,
+                int(
+                    getattr(
+                        config,
+                        "BUZZER_MIN_CONSECUTIVE_HITS_SPO2",
+                        self._min_consecutive_hits,
+                    )
+                ),
+            )
+
+            can_beep_spo2 = bool(
+                getattr(config, "BUZZER_BEEP_ON_SPO2", True)
+                and (not require_hr or hr_ok_for_spo2)
+                and not sensor_error_active
+            )
+
+            if can_beep_spo2 and self._record_hit("SPO2", min_hits=spo2_min_hits):
                 self._maybe_beep(
                     "SPO2",
                     durations=[config.BUZZER_SHORT_BEEP_S] * 3,
                     gap=0.1,
                 )
+            else:
+                # Keep SpO2 alert reason visible but suppress stale/noisy beep streak.
+                self._clear_hit("SPO2")
         else:
             self._clear_hit("SPO2")
 
         # ── Heart Rate ────────────────────────────────────────────────────
-        hr = data.get("heart_rate_bpm")
-        hr_valid = data.get("hr_valid", False)
         hr_high = bool(
             hr is not None
             and hr_valid
@@ -227,29 +266,46 @@ class Buzzer:
         # ── Sensor disconnect / hardware error ────────────────────────────
         sensor_error = data.get("sensor_error")
         if sensor_error:
-            reasons.append(f"SENSOR_ERROR:{sensor_error}")
-            if (
+            sensor_error_text = str(sensor_error).strip()
+            reasons.append(f"SENSOR_ERROR:{sensor_error_text}")
+
+            beep_on_sensor_error = bool(
                 getattr(config, "BUZZER_BEEP_ON_SENSOR_ERROR", True)
-                and self._record_hit("SENSOR_ERROR")
-            ):
-                # 1 long + 1 short: clearly distinguishable from other patterns
-                self._maybe_beep(
-                    "SENSOR_ERROR",
-                    durations=[config.BUZZER_LONG_BEEP_S, config.BUZZER_SHORT_BEEP_S],
-                    gap=0.15,
-                )
+            )
+            change_only = bool(
+                getattr(config, "BUZZER_SENSOR_ERROR_BEEP_ON_CHANGE_ONLY", True)
+            )
+
+            if beep_on_sensor_error:
+                should_beep = False
+                if change_only:
+                    should_beep = sensor_error_text != self._sensor_error_signature
+                else:
+                    should_beep = self._record_hit("SENSOR_ERROR")
+
+                if should_beep:
+                    # 1 long + 1 short: clearly distinguishable from other patterns
+                    self._maybe_beep(
+                        "SENSOR_ERROR",
+                        durations=[config.BUZZER_LONG_BEEP_S, config.BUZZER_SHORT_BEEP_S],
+                        gap=0.15,
+                    )
+
+            self._sensor_error_signature = sensor_error_text
         else:
             self._clear_hit("SENSOR_ERROR")
+            self._sensor_error_signature = None
 
         alert_active = len(reasons) > 0
         return alert_active, reasons
 
-    def _record_hit(self, key: str) -> bool:
+    def _record_hit(self, key: str, min_hits: int | None = None) -> bool:
         """Increment condition streak and return True when debounce threshold is reached."""
+        threshold = self._min_consecutive_hits if min_hits is None else max(1, int(min_hits))
         with self._lock:
             hits = self._condition_hits.get(key, 0) + 1
             self._condition_hits[key] = hits
-        return hits >= self._min_consecutive_hits
+        return hits >= threshold
 
     def _clear_hit(self, key: str):
         """Reset condition streak when condition is no longer present."""
