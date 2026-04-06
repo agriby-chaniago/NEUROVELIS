@@ -48,6 +48,8 @@ Script ini otomatis:
 - `enable` + `start` service
 - memaksa pin buzzer (GPIO D5) tetap LOW saat boot/shutdown service
 - menulis default firmware GPIO `gpio=5=op,dl` di boot config Raspberry Pi
+- memasang hook `/usr/lib/systemd/system-shutdown/neurosense-buzzer-low`
+  agar fase reboot/poweroff paling akhir tetap memaksa GPIO buzzer LOW
 - menambahkan autostart Chromium kiosk untuk `/model`
   pada `~/.config/lxsession/LXDE-pi/autostart` (legacy)
   dan `~/.config/autostart/neurosense-kiosk.desktop` (XDG desktop autostart)
@@ -95,6 +97,8 @@ Perbaikan yang sekarang diterapkan installer:
 - systemd unit menjalankan `raspi-gpio set <pin> op dl` sebelum `ExecStart`
   dan setelah service berhenti
 - boot firmware diberi default `gpio=<pin>=op,dl`
+- hook `system-shutdown` menjalankan `raspi-gpio set <pin> op dl` pada tahap
+  shutdown/reboot paling akhir
 
 Verifikasi cepat:
 

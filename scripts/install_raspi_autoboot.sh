@@ -67,6 +67,8 @@ KIOSK_SCRIPT="$PROJECT_DIR/scripts/open_model_kiosk.sh"
 SERVICE_FILE="/etc/systemd/system/neurosense.service"
 BOOT_CONFIG_FILE=""
 BOOT_CONFIG_UPDATED=0
+SHUTDOWN_HOOK_FILE="/usr/lib/systemd/system-shutdown/neurosense-buzzer-low"
+SHUTDOWN_HOOK_INSTALLED=0
 AUTOSTART_FILE="/etc/xdg/lxsession/LXDE-pi/autostart"
 USER_AUTOSTART_FILE="$RUN_HOME/.config/lxsession/LXDE-pi/autostart"
 DESKTOP_AUTOSTART_DIR="$RUN_HOME/.config/autostart"
@@ -100,6 +102,23 @@ ensure_buzzer_boot_default_low() {
   fi
 
   return 0
+}
+
+install_shutdown_buzzer_hook() {
+  local pin="$1"
+
+  mkdir -p "$(dirname "$SHUTDOWN_HOOK_FILE")"
+  cat > "$SHUTDOWN_HOOK_FILE" <<EOF
+#!/bin/sh
+# NEUROSENSE: force buzzer GPIO LOW at very late shutdown/reboot stage.
+PIN="$pin"
+if [ -x /usr/bin/raspi-gpio ]; then
+  /usr/bin/raspi-gpio set "$PIN" op dl >/dev/null 2>&1 || true
+fi
+exit 0
+EOF
+  chmod 0755 "$SHUTDOWN_HOOK_FILE"
+  SHUTDOWN_HOOK_INSTALLED=1
 }
 
 resolve_buzzer_gpio_pin() {
@@ -150,6 +169,7 @@ if [[ ! "$BUZZER_GPIO_PIN" =~ ^[0-9]+$ ]]; then
 fi
 
 ensure_buzzer_boot_default_low "$BUZZER_GPIO_PIN" || true
+install_shutdown_buzzer_hook "$BUZZER_GPIO_PIN"
 
 cat > "$SERVICE_FILE" <<EOF
 [Unit]
@@ -219,6 +239,9 @@ if [[ -n "$BOOT_CONFIG_FILE" ]]; then
   if [[ "$BOOT_CONFIG_UPDATED" -eq 1 ]]; then
     echo "  note: boot config updated, reboot is required to apply firmware-level GPIO default"
   fi
+fi
+if [[ "$SHUTDOWN_HOOK_INSTALLED" -eq 1 ]]; then
+  echo "- shutdown hook    : $SHUTDOWN_HOOK_FILE"
 fi
 echo "- kiosk autostart  : $TARGET_AUTOSTART"
 echo "- desktop autostart: $DESKTOP_AUTOSTART_FILE"
