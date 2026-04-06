@@ -113,7 +113,7 @@ install_shutdown_buzzer_hook() {
 # NEUROSENSE: force buzzer GPIO LOW at very late shutdown/reboot stage.
 PIN="$pin"
 if [ -x /usr/bin/raspi-gpio ]; then
-  /usr/bin/raspi-gpio set "$PIN" op dl >/dev/null 2>&1 || true
+  /usr/bin/raspi-gpio set "\$PIN" op dl >/dev/null 2>&1 || true
 fi
 exit 0
 EOF
