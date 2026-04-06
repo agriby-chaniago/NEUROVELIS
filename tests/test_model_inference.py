@@ -3,7 +3,9 @@
 from model_inference.model_adapter import (
     _compute_independent_chances_from_scores,
 )
+from model_inference.model_inference_service import ModelInferenceService
 from dashboard.app import create_app
+import config
 
 
 class _DummySensorManager:
@@ -126,3 +128,77 @@ def test_model_routes_exposed():
     assert resp_health.status_code == 200
     health = resp_health.get_json()
     assert "model" in health
+
+
+def _make_touch_state_service() -> ModelInferenceService:
+    """Create a lightweight service instance for touch-state unit tests."""
+    svc = ModelInferenceService.__new__(ModelInferenceService)
+    svc._sensor_touch_prev = False
+    svc._sensor_touch_missing_since = None
+    svc._sensor_touch_paused = True
+    svc._sensor_touch_present_hits = 0
+    svc._sensor_touch_absent_hits = 0
+    svc._smoothed_probs = None
+    svc._class_warmup_until = 0.0
+    return svc
+
+
+def test_sensor_touch_heuristic_requires_valid_hr_spo2_and_gsr():
+    assert not ModelInferenceService._is_sensor_touched(
+        {
+            "heart_rate_bpm": 82,
+            "hr_valid": True,
+            "spo2_percent": None,
+            "spo2_valid": False,
+            "gsr_conductance_us": 6.0,
+        }
+    )
+
+    assert not ModelInferenceService._is_sensor_touched(
+        {
+            "heart_rate_bpm": 170,
+            "hr_valid": True,
+            "spo2_percent": 97,
+            "spo2_valid": True,
+            "gsr_conductance_us": 6.0,
+        }
+    )
+
+    assert ModelInferenceService._is_sensor_touched(
+        {
+            "heart_rate_bpm": 82,
+            "hr_valid": True,
+            "spo2_percent": 97,
+            "spo2_valid": True,
+            "gsr_conductance_us": 6.0,
+        }
+    )
+
+
+def test_touch_debounce_requires_consecutive_hits_before_warmup(monkeypatch):
+    monkeypatch.setattr(config, "MODEL_SENSOR_TOUCH_ON_HITS", 2)
+    monkeypatch.setattr(config, "MODEL_SENSOR_TOUCH_OFF_HITS", 2)
+    monkeypatch.setattr(config, "MODEL_SENSOR_TOUCH_GRACE_S", 2.0)
+    monkeypatch.setattr(config, "MODEL_CLASS_WARMUP_S", 4.0)
+    monkeypatch.setattr(config, "MODEL_CLASS_WARMUP_MIN_S", 4.0)
+    monkeypatch.setattr(config, "MODEL_CLASS_WARMUP_MAX_S", 4.0)
+
+    svc = _make_touch_state_service()
+    touch_payload = {
+        "heart_rate_bpm": 81,
+        "hr_valid": True,
+        "spo2_percent": 97,
+        "spo2_valid": True,
+        "gsr_conductance_us": 6.0,
+    }
+
+    # First hit should not start warmup yet.
+    svc._update_sensor_touch_state(touch_payload, now=10.0)
+    assert svc._sensor_touch_prev is False
+    assert svc._class_warmup_until == 0.0
+
+    # Second consecutive hit confirms touch and starts warmup.
+    svc._update_sensor_touch_state(touch_payload, now=11.0)
+    assert svc._sensor_touch_prev is True
+    assert svc._sensor_touch_paused is False
+    assert svc._class_warmup_until == 15.0

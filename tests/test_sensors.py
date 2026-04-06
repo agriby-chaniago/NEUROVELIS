@@ -243,3 +243,122 @@ class TestBuzzerAlerts:
         original_time = dict(b._last_alert_time)
         b.check_and_alert(data)
         assert b._last_alert_time == original_time   # not updated = cooldown blocked it
+
+    def test_no_gpio_handle_skips_beep_sequence(self, monkeypatch):
+        """When GPIO is not initialised, alert logic should not schedule beep threads."""
+        monkeypatch.setattr(config, "BUZZER_BEEP_ON_HR_HIGH", True)
+        monkeypatch.setattr(config, "BUZZER_MIN_CONSECUTIVE_HITS", 1)
+        b = self._make_buzzer()
+        data = {
+            "heart_rate_bpm": 130,
+            "hr_valid": True,
+            "spo2_percent": 98,
+            "spo2_valid": True,
+            "gsr_conductance_us": 5.0,
+        }
+        with patch.object(b, "_beep_sequence") as beep_mock:
+            active, reasons = b.check_and_alert(data)
+
+        assert active
+        assert any("HR_HIGH" in r for r in reasons)
+        beep_mock.assert_not_called()
+
+    def test_default_policy_hr_alert_keeps_reason_without_beep(self):
+        """HR can stay visible as alert reason while beep remains disabled by default policy."""
+        b = self._make_buzzer()
+        data = {
+            "heart_rate_bpm": 130,
+            "hr_valid": True,
+            "spo2_percent": 98,
+            "spo2_valid": True,
+            "gsr_conductance_us": 5.0,
+        }
+        with patch.object(b, "_beep_sequence") as beep_mock:
+            active, reasons = b.check_and_alert(data)
+
+        assert active
+        assert any("HR_HIGH" in r for r in reasons)
+        beep_mock.assert_not_called()
+
+    def test_spo2_beeps_after_consecutive_hits(self, monkeypatch):
+        """Critical SpO2 alert should beep only after configured consecutive detections."""
+        monkeypatch.setattr(config, "BUZZER_MIN_CONSECUTIVE_HITS", 2)
+        monkeypatch.setattr(config, "BUZZER_BEEP_ON_SPO2", True)
+
+        b = Buzzer()
+        b._gpio_handle = object()  # simulate initialized GPIO path
+
+        data = {
+            "heart_rate_bpm": 75,
+            "hr_valid": True,
+            "spo2_percent": 82,
+            "spo2_valid": True,
+            "gsr_conductance_us": 5.0,
+        }
+
+        with patch.object(b, "_beep_sequence") as beep_mock:
+            b.check_and_alert(data)  # hit 1 -> no beep
+            b.check_and_alert(data)  # hit 2 -> beep
+
+        assert beep_mock.call_count == 1
+
+    def test_consecutive_hits_reset_when_condition_clears(self, monkeypatch):
+        """Debounce streak must reset when signal returns to normal."""
+        monkeypatch.setattr(config, "BUZZER_MIN_CONSECUTIVE_HITS", 2)
+        monkeypatch.setattr(config, "BUZZER_BEEP_ON_SPO2", True)
+
+        b = Buzzer()
+        b._gpio_handle = object()
+
+        low = {
+            "heart_rate_bpm": 75,
+            "hr_valid": True,
+            "spo2_percent": 82,
+            "spo2_valid": True,
+            "gsr_conductance_us": 5.0,
+        }
+        normal = {
+            "heart_rate_bpm": 75,
+            "hr_valid": True,
+            "spo2_percent": 98,
+            "spo2_valid": True,
+            "gsr_conductance_us": 5.0,
+        }
+
+        with patch.object(b, "_beep_sequence") as beep_mock:
+            b.check_and_alert(low)     # hit 1
+            b.check_and_alert(normal)  # reset
+            b.check_and_alert(low)     # hit 1 again, still no beep
+
+        beep_mock.assert_not_called()
+
+
+class TestBuzzerSetup:
+    def test_setup_falls_back_to_gpiochip0_when_chip4_fails(self, monkeypatch):
+        """If configured chip fails, setup should try common fallback chips."""
+        open_calls = []
+
+        def _open_chip(chip: int):
+            open_calls.append(chip)
+            if chip == 4:
+                raise OSError("gpiochip4 unavailable")
+            return 123
+
+        fake_lgpio = types.SimpleNamespace(
+            gpiochip_open=MagicMock(side_effect=_open_chip),
+            gpio_claim_output=MagicMock(),
+            gpio_write=MagicMock(),
+            gpiochip_close=MagicMock(),
+        )
+
+        monkeypatch.setattr(config, "BUZZER_ENABLED", True)
+        monkeypatch.setattr(config, "BUZZER_GPIO_CHIP", 4)
+
+        with patch.dict(sys.modules, {"lgpio": fake_lgpio}):
+            b = Buzzer()
+            b.setup()
+            assert b._gpio_handle == 123
+            assert b._gpio_chip == 0
+            assert open_calls[:2] == [4, 0]
+
+            b.close()

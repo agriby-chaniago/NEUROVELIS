@@ -139,7 +139,19 @@ BUZZER_COOLDOWN_S    = 5.0   # Jeda minimum antara alert (hindari bunyi terus-me
 
 # Test beep saat startup (2 beep pendek untuk konfirmasi buzzer bekerja)
 # Nonaktifkan jika buzzer sudah terbukti berfungsi dan bunyi startup mengganggu
-BUZZER_STARTUP_BEEP  = True
+BUZZER_STARTUP_BEEP  = False
+
+# Policy buzzer: default hanya bunyi di kondisi yang benar-benar kritis.
+# Alert tetap tercatat di dashboard/CSV, tetapi bunyi bisa dipilih per kondisi.
+BUZZER_BEEP_ON_SPO2 = True
+BUZZER_BEEP_ON_HR_HIGH = False
+BUZZER_BEEP_ON_HR_LOW = False
+BUZZER_BEEP_ON_GSR = False
+BUZZER_BEEP_ON_SENSOR_ERROR = True
+
+# Kondisi harus terjadi berurutan beberapa kali sebelum buzzer berbunyi.
+# Ini menekan false-alarm akibat noise pembacaan sesaat.
+BUZZER_MIN_CONSECUTIVE_HITS = 3
 
 # ─── Alert Thresholds ─────────────────────────────────────────────────────
 # Buzzer akan berbunyi jika nilai sensor melewati batas ini.
@@ -271,6 +283,11 @@ MODEL_MIN_WINDOW_COVERAGE_RATIO = 0.80
 MODEL_REQUIRE_SPO2_VALID_FOR_FEATURE_WINDOW = False
 # If sensor is untouched, wait this grace period (1-3s recommended) before pausing inference.
 MODEL_SENSOR_TOUCH_GRACE_S = 2.0
+# Debounce touch transitions to avoid warmup popups from transient sensor spikes.
+# Touch starts only after N consecutive valid-touch snapshots.
+MODEL_SENSOR_TOUCH_ON_HITS = 2
+# Touch ends only after N consecutive non-touch snapshots.
+MODEL_SENSOR_TOUCH_OFF_HITS = 2
 # Warmup hold after sensor touch/resume to stabilize class decision.
 MODEL_CLASS_WARMUP_S = 4.0
 MODEL_CLASS_WARMUP_MIN_S = 3.0

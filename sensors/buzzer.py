@@ -40,11 +40,17 @@ class Buzzer:
 
     def __init__(self):
         self._gpio_handle = None
+        self._gpio_chip = None
         self._pin = config.BUZZER_GPIO_PIN
         self._enabled = config.BUZZER_ENABLED
+        self._min_consecutive_hits = max(
+            1, int(getattr(config, "BUZZER_MIN_CONSECUTIVE_HITS", 1))
+        )
         # Per-condition cooldown: each key has its own last-fired timestamp.
         # Prevents one condition from suppressing another during cooldown.
         self._last_alert_time: dict[str, float] = {}
+        # Per-condition consecutive hit counters to suppress transient noise.
+        self._condition_hits: dict[str, int] = {}
         self._lock = threading.Lock()   # prevent concurrent beep calls
         self._active = False            # is buzzer currently ON?
 
@@ -61,18 +67,53 @@ class Buzzer:
             return
         try:
             import lgpio
-            chip = getattr(config, "BUZZER_GPIO_CHIP", 4)
-            self._gpio_handle = lgpio.gpiochip_open(chip)
-            # Drive LOW immediately — prevents floating HIGH buzz on startup
-            lgpio.gpio_claim_output(self._gpio_handle, self._pin, 0)
-            lgpio.gpio_write(self._gpio_handle, self._pin, 0)   # explicit LOW
-            logger.info(
-                "Buzzer ready on GPIO %d via gpiochip%d (D5, Grove Base HAT)",
-                self._pin, chip,
+            preferred_chip = getattr(config, "BUZZER_GPIO_CHIP", 4)
+
+            # Try configured chip first, then common fallback chips.
+            chip_candidates = [preferred_chip]
+            for fallback_chip in (4, 0):
+                if fallback_chip not in chip_candidates:
+                    chip_candidates.append(fallback_chip)
+
+            last_error = None
+            for chip in chip_candidates:
+                handle = None
+                try:
+                    handle = lgpio.gpiochip_open(chip)
+                    # Drive LOW immediately — prevents floating HIGH buzz on startup
+                    lgpio.gpio_claim_output(handle, self._pin, 0)
+                    lgpio.gpio_write(handle, self._pin, 0)   # explicit LOW
+                    self._gpio_handle = handle
+                    self._gpio_chip = chip
+                    logger.info(
+                        "Buzzer ready on GPIO %d via gpiochip%d (D5, Grove Base HAT)",
+                        self._pin, chip,
+                    )
+                    return
+                except Exception as exc:
+                    last_error = exc
+                    if handle is not None:
+                        try:
+                            lgpio.gpiochip_close(handle)
+                        except Exception:
+                            pass
+                    logger.warning(
+                        "Buzzer init failed on gpiochip%d: %s",
+                        chip,
+                        exc,
+                    )
+
+            self._gpio_handle = None
+            self._gpio_chip = None
+            logger.error(
+                "Buzzer setup failed for chips %s: %s",
+                chip_candidates,
+                last_error,
             )
         except Exception as exc:
             logger.error("Buzzer setup failed: %s", exc)
             self._gpio_handle = None
+            self._gpio_chip = None
 
     def close(self):
         """Turn off buzzer and release GPIO."""
@@ -84,6 +125,7 @@ class Buzzer:
             except Exception:
                 pass
             self._gpio_handle = None
+            self._gpio_chip = None
         logger.info("Buzzer closed.")
 
     # ── Alert evaluation ──────────────────────────────────────────────────
@@ -110,58 +152,110 @@ class Buzzer:
         # ── SpO2 (highest priority — check first) ─────────────────────────
         spo2 = data.get("spo2_percent")
         spo2_valid = data.get("spo2_valid", False)
-        if spo2 is not None and spo2_valid:
-            if config.ALERT_SPO2_LOW and spo2 < config.ALERT_SPO2_LOW:
-                reasons.append(f"SPO2_LOW:{spo2:.1f}%<{config.ALERT_SPO2_LOW}")
+        spo2_low = bool(
+            spo2 is not None
+            and spo2_valid
+            and config.ALERT_SPO2_LOW
+            and spo2 < config.ALERT_SPO2_LOW
+        )
+        if spo2_low:
+            reasons.append(f"SPO2_LOW:{spo2:.1f}%<{config.ALERT_SPO2_LOW}")
+            if getattr(config, "BUZZER_BEEP_ON_SPO2", True) and self._record_hit("SPO2"):
                 self._maybe_beep(
                     "SPO2",
                     durations=[config.BUZZER_SHORT_BEEP_S] * 3,
                     gap=0.1,
                 )
+        else:
+            self._clear_hit("SPO2")
 
         # ── Heart Rate ────────────────────────────────────────────────────
         hr = data.get("heart_rate_bpm")
         hr_valid = data.get("hr_valid", False)
-        if hr is not None and hr_valid:
-            if config.ALERT_HR_HIGH and hr > config.ALERT_HR_HIGH:
-                reasons.append(f"HR_HIGH:{hr:.0f}bpm>{config.ALERT_HR_HIGH}")
+        hr_high = bool(
+            hr is not None
+            and hr_valid
+            and config.ALERT_HR_HIGH
+            and hr > config.ALERT_HR_HIGH
+        )
+        if hr_high:
+            reasons.append(f"HR_HIGH:{hr:.0f}bpm>{config.ALERT_HR_HIGH}")
+            if getattr(config, "BUZZER_BEEP_ON_HR_HIGH", False) and self._record_hit("HR_HIGH"):
                 self._maybe_beep(
                     "HR_HIGH",
                     durations=[config.BUZZER_SHORT_BEEP_S] * 2,
                     gap=0.08,   # fast gap — tachycardia urgency
                 )
-            if config.ALERT_HR_LOW and hr < config.ALERT_HR_LOW:
-                reasons.append(f"HR_LOW:{hr:.0f}bpm<{config.ALERT_HR_LOW}")
+        else:
+            self._clear_hit("HR_HIGH")
+
+        hr_low = bool(
+            hr is not None
+            and hr_valid
+            and config.ALERT_HR_LOW
+            and hr < config.ALERT_HR_LOW
+        )
+        if hr_low:
+            reasons.append(f"HR_LOW:{hr:.0f}bpm<{config.ALERT_HR_LOW}")
+            if getattr(config, "BUZZER_BEEP_ON_HR_LOW", False) and self._record_hit("HR_LOW"):
                 self._maybe_beep(
                     "HR_LOW",
                     durations=[config.BUZZER_SHORT_BEEP_S] * 2,
                     gap=0.40,   # slow gap — bradycardia rhythm
                 )
+        else:
+            self._clear_hit("HR_LOW")
 
         # ── GSR ───────────────────────────────────────────────────────────
         gsr = data.get("gsr_conductance_us")
-        if gsr is not None:
-            if config.ALERT_GSR_HIGH_US and gsr > config.ALERT_GSR_HIGH_US:
-                reasons.append(f"GSR_HIGH:{gsr:.2f}uS>{config.ALERT_GSR_HIGH_US}")
+        gsr_high = bool(
+            gsr is not None
+            and config.ALERT_GSR_HIGH_US
+            and gsr > config.ALERT_GSR_HIGH_US
+        )
+        if gsr_high:
+            reasons.append(f"GSR_HIGH:{gsr:.2f}uS>{config.ALERT_GSR_HIGH_US}")
+            if getattr(config, "BUZZER_BEEP_ON_GSR", False) and self._record_hit("GSR"):
                 self._maybe_beep(
                     "GSR",
                     durations=[config.BUZZER_LONG_BEEP_S],
                     gap=0,
                 )
+        else:
+            self._clear_hit("GSR")
 
         # ── Sensor disconnect / hardware error ────────────────────────────
         sensor_error = data.get("sensor_error")
         if sensor_error:
             reasons.append(f"SENSOR_ERROR:{sensor_error}")
-            # 1 long + 1 short: clearly distinguishable from other patterns
-            self._maybe_beep(
-                "SENSOR_ERROR",
-                durations=[config.BUZZER_LONG_BEEP_S, config.BUZZER_SHORT_BEEP_S],
-                gap=0.15,
-            )
+            if (
+                getattr(config, "BUZZER_BEEP_ON_SENSOR_ERROR", True)
+                and self._record_hit("SENSOR_ERROR")
+            ):
+                # 1 long + 1 short: clearly distinguishable from other patterns
+                self._maybe_beep(
+                    "SENSOR_ERROR",
+                    durations=[config.BUZZER_LONG_BEEP_S, config.BUZZER_SHORT_BEEP_S],
+                    gap=0.15,
+                )
+        else:
+            self._clear_hit("SENSOR_ERROR")
 
         alert_active = len(reasons) > 0
         return alert_active, reasons
+
+    def _record_hit(self, key: str) -> bool:
+        """Increment condition streak and return True when debounce threshold is reached."""
+        with self._lock:
+            hits = self._condition_hits.get(key, 0) + 1
+            self._condition_hits[key] = hits
+        return hits >= self._min_consecutive_hits
+
+    def _clear_hit(self, key: str):
+        """Reset condition streak when condition is no longer present."""
+        with self._lock:
+            if self._condition_hits.get(key, 0):
+                self._condition_hits[key] = 0
 
     # ── Beep logic ────────────────────────────────────────────────────────
 
@@ -177,6 +271,10 @@ class Buzzer:
         durations : list of on-times (seconds) for each beep in the sequence
         gap       : silence between beeps (seconds)
         """
+        # Skip scheduling when buzzer is disabled or GPIO is not initialised.
+        if not self._enabled or self._gpio_handle is None:
+            return
+
         now = time.monotonic()
         with self._lock:
             if (now - self._last_alert_time.get(key, 0.0)) < config.BUZZER_COOLDOWN_S:
@@ -188,13 +286,19 @@ class Buzzer:
 
     def _beep_sequence(self, durations: list[float], gap: float):
         """Sound the buzzer with a variable-length sequence in a background thread."""
+        if not durations:
+            return
+
+        safe_gap = max(0.0, float(gap))
+
         def _play():
             for i, on_time in enumerate(durations):
+                safe_on_time = max(0.0, float(on_time))
                 self._set_pin(True)
-                time.sleep(on_time)
+                time.sleep(safe_on_time)
                 self._set_pin(False)
-                if gap > 0 and i < len(durations) - 1:
-                    time.sleep(gap)
+                if safe_gap > 0 and i < len(durations) - 1:
+                    time.sleep(safe_gap)
 
         threading.Thread(target=_play, daemon=True).start()
 

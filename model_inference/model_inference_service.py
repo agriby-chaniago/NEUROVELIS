@@ -60,6 +60,8 @@ class ModelInferenceService:
         self._sensor_touch_prev = False
         self._sensor_touch_missing_since: Optional[float] = None
         self._sensor_touch_paused = False
+        self._sensor_touch_present_hits = 0
+        self._sensor_touch_absent_hits = 0
         self._class_warmup_until = 0.0
         self._latest: dict = {
             "model_label_top1": "unknown",
@@ -291,11 +293,56 @@ class ModelInferenceService:
     def _is_sensor_touched(sensor_data: dict) -> bool:
         """Heuristic for active sensor touch (finger/contact present)."""
         hr_valid = bool(sensor_data.get("hr_valid"))
-        gsr_ok = sensor_data.get("gsr_conductance_us") is not None
-        return hr_valid and gsr_ok
+        spo2_valid = bool(sensor_data.get("spo2_valid"))
+
+        hr = sensor_data.get("heart_rate_bpm")
+        spo2 = sensor_data.get("spo2_percent")
+        gsr = sensor_data.get("gsr_conductance_us")
+
+        try:
+            hr_val = float(hr)
+        except (TypeError, ValueError):
+            hr_val = None
+        try:
+            spo2_val = float(spo2)
+        except (TypeError, ValueError):
+            spo2_val = None
+        try:
+            gsr_val = float(gsr)
+        except (TypeError, ValueError):
+            gsr_val = None
+
+        # Require valid HR+SpO2 with plausible ranges and non-null GSR.
+        # This avoids false touch detection from one noisy/stale metric alone.
+        hr_ok = hr_valid and hr_val is not None and 40.0 <= hr_val <= 160.0
+        spo2_ok = spo2_valid and spo2_val is not None and 70.0 <= spo2_val <= 100.0
+        gsr_ok = gsr_val is not None and gsr_val >= 0.0
+        return hr_ok and spo2_ok and gsr_ok
+
+    def _is_sensor_touched_debounced(self, sensor_data: dict) -> bool:
+        """Debounce touch state so a transient spike doesn't trigger warmup."""
+        raw_touched = self._is_sensor_touched(sensor_data)
+        on_hits = max(1, int(getattr(config, "MODEL_SENSOR_TOUCH_ON_HITS", 2)))
+        off_hits = max(1, int(getattr(config, "MODEL_SENSOR_TOUCH_OFF_HITS", 2)))
+
+        if raw_touched:
+            self._sensor_touch_present_hits += 1
+            self._sensor_touch_absent_hits = 0
+        else:
+            self._sensor_touch_absent_hits += 1
+            self._sensor_touch_present_hits = 0
+
+        if self._sensor_touch_prev:
+            if raw_touched:
+                return True
+            return self._sensor_touch_absent_hits < off_hits
+
+        if not raw_touched:
+            return False
+        return self._sensor_touch_present_hits >= on_hits
 
     def _update_sensor_touch_state(self, sensor_data: dict, now: float) -> None:
-        touched = self._is_sensor_touched(sensor_data)
+        touched = self._is_sensor_touched_debounced(sensor_data)
         grace_s = max(1.0, min(3.0, float(getattr(config, "MODEL_SENSOR_TOUCH_GRACE_S", 2.0))))
         warmup_default = max(0.0, float(getattr(config, "MODEL_CLASS_WARMUP_S", 4.0)))
         warmup_min = max(0.0, float(getattr(config, "MODEL_CLASS_WARMUP_MIN_S", warmup_default)))
