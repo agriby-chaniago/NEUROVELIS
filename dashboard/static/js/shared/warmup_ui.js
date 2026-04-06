@@ -14,6 +14,13 @@
     overlayLabelText: "",
   };
 
+  const warmupTicker = {
+    intervalId: null,
+    endsAtMs: 0,
+    overlayEnabled: true,
+    overlayMinSeconds: 0.2,
+  };
+
   function setTextIfChanged(el, nextText, key) {
     if (!el) return;
     const value = String(nextText);
@@ -121,6 +128,69 @@
     return "is-degraded";
   }
 
+  function formatCountdown(seconds) {
+    const sec = Math.max(0, Number(seconds) || 0);
+    if (sec < 10) {
+      return `${sec.toFixed(1)}s`;
+    }
+    if (sec < 60) {
+      return `${Math.ceil(sec)}s`;
+    }
+    const mins = Math.floor(sec / 60);
+    const rem = Math.ceil(sec % 60);
+    return `${mins}:${String(rem).padStart(2, "0")}`;
+  }
+
+  function stopWarmupTicker() {
+    if (warmupTicker.intervalId !== null) {
+      window.clearInterval(warmupTicker.intervalId);
+      warmupTicker.intervalId = null;
+    }
+  }
+
+  function refreshWarmupTicker() {
+    const remaining = Math.max(0, (warmupTicker.endsAtMs - Date.now()) / 1000);
+    const bannerCountdown = document.getElementById("warmup-banner-countdown");
+    const overlay = document.getElementById("warmup-overlay");
+    const overlayNumber = document.getElementById("warmup-overlay-number");
+
+    setTextIfChanged(
+      bannerCountdown,
+      formatCountdown(remaining),
+      "bannerCountdownText",
+    );
+
+    const shouldShowOverlay =
+      warmupTicker.overlayEnabled &&
+      remaining >= warmupTicker.overlayMinSeconds;
+    setShowIfChanged(overlay, shouldShowOverlay, "overlayVisible");
+    setTextIfChanged(
+      overlayNumber,
+      String(Math.max(1, Math.ceil(remaining))),
+      "overlayNumberText",
+    );
+
+    if (remaining <= 0) {
+      stopWarmupTicker();
+    }
+  }
+
+  function syncWarmupTicker(warm, showOverlay, overlayMinSeconds) {
+    if (!warm.warmupActive) {
+      stopWarmupTicker();
+      return;
+    }
+
+    warmupTicker.endsAtMs = Date.now() + Math.max(0, warm.remaining) * 1000;
+    warmupTicker.overlayEnabled = showOverlay;
+    warmupTicker.overlayMinSeconds = Math.max(0, overlayMinSeconds);
+    refreshWarmupTicker();
+
+    if (warmupTicker.intervalId === null) {
+      warmupTicker.intervalId = window.setInterval(refreshWarmupTicker, 100);
+    }
+  }
+
   function apply(data, options) {
     const opts = options || {};
     const warm = normalizeState(data || {});
@@ -145,7 +215,7 @@
     );
     setTextIfChanged(
       bannerCountdown,
-      warm.warmupActive ? `${warm.countdown}s` : "--",
+      warm.warmupActive ? formatCountdown(warm.remaining) : "--",
       "bannerCountdownText",
     );
     if (bannerReason) {
@@ -187,7 +257,7 @@
     setShowIfChanged(overlay, shouldShowOverlay, "overlayVisible");
     setTextIfChanged(
       overlayNumber,
-      String(Math.max(1, warm.countdown)),
+      String(Math.max(1, Math.ceil(warm.remaining))),
       "overlayNumberText",
     );
     setTextIfChanged(
@@ -195,6 +265,8 @@
       "Model warmup in progress",
       "overlayLabelText",
     );
+
+    syncWarmupTicker(warm, showOverlay, overlayMinSeconds);
 
     return warm;
   }

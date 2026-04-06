@@ -77,6 +77,8 @@ class ModelInferenceService:
             "model_face_landmarks": [],
             "model_face_backend": self._visual_extractor.health().get("backend"),
             "model_latency_ms": None,
+            "model_pipeline_latency_ms": None,
+            "model_loop_latency_ms": None,
             "model_timestamp_utc": None,
             "model_warmup_active": False,
             "model_warmup_remaining_s": 0.0,
@@ -205,6 +207,8 @@ class ModelInferenceService:
                 if self._sensor_touch_paused:
                     result = _unknown_payload(reason="SENSOR_NOT_TOUCHED_PAUSED")
                     result["model_latency_ms"] = 0
+                    result["model_pipeline_latency_ms"] = 0
+                    result["model_loop_latency_ms"] = 0
                     result = self._annotate_runtime_state(result=result, now=start)
                     result["model_face_detected"] = face_detected
                     result["model_face_landmarks"] = landmarks_norm
@@ -225,6 +229,7 @@ class ModelInferenceService:
                     self._stop_event.wait(timeout=max(0.0, visual_interval - elapsed))
                     continue
 
+                inference_started = time.monotonic()
                 feature_vector = self._build_feature_vector(min_points=min_points)
                 if feature_vector is not None:
                     with self._lock:
@@ -235,6 +240,7 @@ class ModelInferenceService:
                         self._last_feature_vector = None
                         self._last_feature_timestamp_utc = None
 
+                predict_started = time.monotonic()
                 try:
                     result = self._adapter.predict(
                         sensor_data=sensor_data,
@@ -248,12 +254,16 @@ class ModelInferenceService:
                     result = _unknown_payload(reason="INFERENCE_ERROR")
                     logger.error("Model inference error: %s", exc)
 
-                latency_ms = int((time.monotonic() - start) * 1000)
-                if latency_ms > timeout_ms:
+                predict_latency_ms = int((time.monotonic() - predict_started) * 1000)
+                pipeline_latency_ms = int((time.monotonic() - inference_started) * 1000)
+                loop_latency_ms = int((time.monotonic() - start) * 1000)
+
+                if pipeline_latency_ms > timeout_ms:
                     result = _unknown_payload(reason="INFERENCE_TIMEOUT")
-                    result["model_latency_ms"] = latency_ms
-                else:
-                    result["model_latency_ms"] = latency_ms
+
+                result["model_latency_ms"] = predict_latency_ms
+                result["model_pipeline_latency_ms"] = pipeline_latency_ms
+                result["model_loop_latency_ms"] = loop_latency_ms
 
                 result = self._apply_smoothing(result)
                 result = self._apply_class_warmup_gate(result=result, now=start)

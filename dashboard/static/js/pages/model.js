@@ -549,6 +549,11 @@ function fmtNumber(value, digits = 1) {
   return Number(value).toFixed(digits);
 }
 
+function toMs(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.max(0, Math.round(n)) : null;
+}
+
 function formatLabel(label) {
   if (!label) return "UNKNOWN";
   return String(label).toUpperCase();
@@ -634,10 +639,9 @@ function updateCards(data, warm) {
       : fallbackConf !== null && fallbackConf !== undefined
         ? `${(Number(fallbackConf) * 100).toFixed(1)}`
         : "-";
-  const latency =
-    data.model_latency_ms !== null && data.model_latency_ms !== undefined
-      ? String(data.model_latency_ms)
-      : "-";
+  const latencyInferenceMs = toMs(data.model_latency_ms);
+  const latencyPipelineMs = toMs(data.model_pipeline_latency_ms);
+  const latencyLoopMs = toMs(data.model_loop_latency_ms);
 
   const hr = data.hr_valid === false ? "-" : fmtNumber(data.heart_rate_bpm, 0);
   const spo2 =
@@ -649,7 +653,32 @@ function updateCards(data, warm) {
   setText("val-hr", hr);
   setText("val-spo2", spo2);
   setText("val-gsr", gsr);
-  setText("val-latency", latency);
+  setText(
+    "val-latency",
+    latencyInferenceMs !== null ? String(latencyInferenceMs) : "-",
+  );
+
+  const latencyCard = byId("val-latency")?.closest(".metric-card");
+  if (latencyCard) {
+    latencyCard.classList.remove("is-good", "is-warn", "is-high");
+    if (latencyInferenceMs !== null) {
+      if (latencyInferenceMs >= 200) {
+        latencyCard.classList.add("is-high");
+      } else if (latencyInferenceMs >= 120) {
+        latencyCard.classList.add("is-warn");
+      } else {
+        latencyCard.classList.add("is-good");
+      }
+    }
+
+    const tips = [];
+    if (latencyInferenceMs !== null)
+      tips.push(`Inference ${latencyInferenceMs}ms`);
+    if (latencyPipelineMs !== null)
+      tips.push(`Pipeline ${latencyPipelineMs}ms`);
+    if (latencyLoopMs !== null) tips.push(`Loop ${latencyLoopMs}ms`);
+    latencyCard.title = tips.length ? tips.join(" | ") : "Latency unavailable";
+  }
 
   const warmCountdown = warm?.warmupActive ? `${warm.countdown}s` : null;
   setText(

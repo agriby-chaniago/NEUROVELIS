@@ -58,6 +58,18 @@
   color: #c25d00;
 }
 
+.metric-card.lat.is-good .value {
+  color: #1e7845;
+}
+
+.metric-card.lat.is-warn .value {
+  color: #c25d00;
+}
+
+.metric-card.lat.is-high .value {
+  color: #b71c1c;
+}
+
 .metric-card.signal .value {
   color: #0277bd;
   font-size: 1rem;
