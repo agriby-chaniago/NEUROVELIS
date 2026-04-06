@@ -26,8 +26,7 @@
     startedAtMs: 0,
   };
 
-  const STABILIZATION_MESSAGE =
-    "Jaga sensor tetap stabil dan hadap kamera sampai status RUNNING.";
+  const STABILIZATION_REASON_TOKEN = "stabilizing";
 
   function setTextIfChanged(el, nextText, key) {
     if (!el) return;
@@ -80,6 +79,24 @@
     return Number.isFinite(n) ? n : null;
   }
 
+  function normalizeReasonToken(reason) {
+    const raw = String(reason || "").trim();
+    if (!raw) return "unknown";
+
+    const primary = raw.split(":", 1)[0];
+    const token = primary
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .replace(/_+/g, "_");
+
+    if (!token) return "unknown";
+    if (token === "sensor_not_touched") return "wait_sensor";
+    if (token === "live") return "running";
+    if (token === "class_warmup") return "class_warmup";
+    return token;
+  }
+
   function normalizeState(data) {
     const reason = String(
       data.model_runtime_reason || data.model_alert_reasons || "",
@@ -103,27 +120,29 @@
     }
 
     const countdown = Math.max(0, Math.ceil(remaining));
+    const runtimeReasonToken = normalizeReasonToken(reason || "unknown");
     return {
       warmupActive,
       remaining,
       countdown,
       runtimeState,
       runtimeReason: reason || "-",
+      runtimeReasonToken,
     };
   }
 
   function stateText(state) {
     switch (state) {
       case "RUNNING":
-        return "LIVE";
+        return "running";
       case "WARMUP":
-        return "WARMUP";
+        return "class_warmup";
       case "WAITING_SENSOR":
-        return "WAIT SENSOR";
+        return "wait_sensor";
       case "INIT":
-        return "INIT";
+        return "init";
       default:
-        return "DEGRADED";
+        return "degraded";
     }
   }
 
@@ -179,7 +198,11 @@
       formatCountdown(elapsed),
       "bannerCountdownText",
     );
-    setTextIfChanged(bannerReason, STABILIZATION_MESSAGE, "bannerReasonText");
+    setTextIfChanged(
+      bannerReason,
+      STABILIZATION_REASON_TOKEN,
+      "bannerReasonText",
+    );
   }
 
   function syncStabilizationTicker(active) {
@@ -257,7 +280,7 @@
     const stabilizationElapsed = syncStabilizationTicker(stabilizationActive);
     warm.stabilizeActive = stabilizationActive;
     warm.stabilizeElapsed = stabilizationElapsed;
-    warm.stabilizeMessage = STABILIZATION_MESSAGE;
+    warm.stabilizeMessage = STABILIZATION_REASON_TOKEN;
 
     const banner = document.getElementById("warmup-banner");
     const bannerState = document.getElementById("warmup-banner-state");
@@ -279,6 +302,15 @@
       : stabilizationActive
         ? formatCountdown(stabilizationElapsed)
         : "--";
+    const bannerReasonToken = warm.warmupActive
+      ? "class_warmup"
+      : warm.runtimeState === "WAITING_SENSOR"
+        ? "wait_sensor"
+        : stabilizationActive
+          ? STABILIZATION_REASON_TOKEN
+          : warm.runtimeReasonToken;
+
+    warm.reasonToken = bannerReasonToken;
 
     setVisibleIfChanged(banner, shouldShowBanner, "bannerVisible");
     setStateClassIfChanged(banner, bannerStateClass, "bannerClass");
@@ -290,27 +322,7 @@
     );
 
     if (bannerReason) {
-      if (warm.runtimeState === "WAITING_SENSOR") {
-        setTextIfChanged(
-          bannerReason,
-          "Pastikan sensor disentuh agar warmup dimulai.",
-          "bannerReasonText",
-        );
-      } else if (warm.warmupActive) {
-        setTextIfChanged(
-          bannerReason,
-          "Stabilisasi data model sedang berlangsung.",
-          "bannerReasonText",
-        );
-      } else if (stabilizationActive) {
-        setTextIfChanged(
-          bannerReason,
-          STABILIZATION_MESSAGE,
-          "bannerReasonText",
-        );
-      } else {
-        setTextIfChanged(bannerReason, warm.runtimeReason, "bannerReasonText");
-      }
+      setTextIfChanged(bannerReason, bannerReasonToken, "bannerReasonText");
     }
 
     const pill = document.getElementById(opts.pillId || "runtime-state-pill");
@@ -337,11 +349,7 @@
       String(Math.max(1, Math.ceil(warm.remaining))),
       "overlayNumberText",
     );
-    setTextIfChanged(
-      overlayLabel,
-      "Model warmup in progress",
-      "overlayLabelText",
-    );
+    setTextIfChanged(overlayLabel, "class_warmup", "overlayLabelText");
 
     syncWarmupTicker(warm, showOverlay, overlayMinSeconds);
     if (warm.warmupActive) {
