@@ -10,6 +10,7 @@ subsequent results appear every STEP_SIZE samples (~1 s at 25 Hz).
 
 import collections
 import logging
+import time
 from . import BaseSensor
 from .max30102 import MAX30102
 from .hrcalc import calc_hr_and_spo2
@@ -60,6 +61,9 @@ class MAX30102Reader(BaseSensor):
         # IR drift guard: don't update SpO2 EMA while the DC level is shifting
         # (finger repositioning, placement, removal).  >3% change = transitional.
         self._prev_ir_mean: float | None = None
+        # Auto-recovery throttle for I2C-level failures.
+        self._last_recover_attempt_mono: float = 0.0
+        self._RECOVER_RETRY_S = 5.0
 
     def calibrate(self) -> None:
         """Initialise the MAX30102 and verify it responds with the correct PART_ID."""
@@ -86,10 +90,34 @@ class MAX30102Reader(BaseSensor):
             else:
                 logger.info("MAX30102 detected OK (PART_ID=0x15)")
             self._last_error = None
+            self._last_recover_attempt_mono = time.monotonic()
         except Exception as exc:
             self._last_error = str(exc)
             logger.error("MAX30102 calibrate failed: %s", exc)
             raise
+
+    def _attempt_recover(self):
+        """Try to reinitialise sensor after I2C/read failure (throttled)."""
+        now = time.monotonic()
+        if (now - self._last_recover_attempt_mono) < self._RECOVER_RETRY_S:
+            return
+
+        self._last_recover_attempt_mono = now
+        logger.warning("MAX30102: attempting auto-recovery after read error...")
+
+        try:
+            if self._sensor is not None:
+                self._sensor.close()
+                self._sensor = None
+        except Exception:
+            pass
+
+        try:
+            self.calibrate()
+            logger.info("MAX30102: auto-recovery succeeded")
+        except Exception as exc:
+            # calibrate() already logs details and sets _last_error
+            logger.error("MAX30102: auto-recovery failed: %s", exc)
 
     def read(self) -> dict:
         """
@@ -293,6 +321,7 @@ class MAX30102Reader(BaseSensor):
         except Exception as exc:
             self._last_error = str(exc)
             logger.error("MAX30102 read error: %s", exc)
+            self._attempt_recover()
             return {
                 "heart_rate_bpm": None,
                 "spo2_percent":   None,
