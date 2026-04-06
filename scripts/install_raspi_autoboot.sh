@@ -19,6 +19,7 @@ fi
 resolve_python_bin() {
   local candidates=()
   local arg_path="${1:-}"
+  local legacy_env_dir_name="neuro""sense-env"
 
   # Priority:
   # 1) First arg to script
@@ -46,6 +47,7 @@ resolve_python_bin() {
   candidates+=(
     "$PROJECT_DIR/.venv/bin/python"
     "$RUN_HOME/neurovelis-env/bin/python"
+    "$RUN_HOME/$legacy_env_dir_name/bin/python"
     "$RUN_HOME/.venv/bin/python"
   )
 
@@ -181,10 +183,13 @@ cleanup_legacy_brand_artifacts() {
 
 if [[ -z "${PYTHON_BIN:-}" || ! -x "$PYTHON_BIN" ]]; then
   echo "Python virtualenv executable not found." >&2
-  echo "Provide venv path explicitly, for example:" >&2
+  echo "Detected candidates checked: $PROJECT_DIR/.venv, $RUN_HOME/neurovelis-env, $RUN_HOME/.venv" >&2
+  echo "Provide your existing venv path explicitly, for example:" >&2
   echo "  sudo bash scripts/install_raspi_autoboot.sh /home/$RUN_USER/neurovelis-env/bin/activate" >&2
   echo "Or via env var:" >&2
   echo "  sudo VENV_PYTHON=/home/$RUN_USER/neurovelis-env/bin/python bash scripts/install_raspi_autoboot.sh" >&2
+  echo "To find available Python venv executables, run:" >&2
+  echo "  ls -l $RUN_HOME/*env/bin/python $RUN_HOME/.venv/bin/python $PROJECT_DIR/.venv/bin/python 2>/dev/null" >&2
   exit 1
 fi
 
