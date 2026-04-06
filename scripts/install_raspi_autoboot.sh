@@ -102,6 +102,24 @@ ensure_buzzer_boot_default_low() {
   return 0
 }
 
+resolve_buzzer_gpio_pin() {
+  local py_bin="$1"
+  local pin=""
+
+  pin="$(
+    cd "$PROJECT_DIR" &&
+    PYTHONPATH="$PROJECT_DIR${PYTHONPATH:+:$PYTHONPATH}" "$py_bin" - <<'PY'
+try:
+    import config
+    print(getattr(config, "BUZZER_GPIO_PIN", 5))
+except Exception:
+    print(5)
+PY
+  )" || true
+
+  echo "$pin"
+}
+
 if [[ -z "${PYTHON_BIN:-}" || ! -x "$PYTHON_BIN" ]]; then
   echo "Python virtualenv executable not found." >&2
   echo "Provide venv path explicitly, for example:" >&2
@@ -126,13 +144,8 @@ if [[ ! -x "$KIOSK_SCRIPT" ]]; then
   chmod +x "$KIOSK_SCRIPT"
 fi
 
-BUZZER_GPIO_PIN="$($PYTHON_BIN - <<'PY'
-import config
-print(getattr(config, "BUZZER_GPIO_PIN", 5))
-PY
-)"
-
-if [[ -z "$BUZZER_GPIO_PIN" ]]; then
+BUZZER_GPIO_PIN="$(resolve_buzzer_gpio_pin "$PYTHON_BIN")"
+if [[ ! "$BUZZER_GPIO_PIN" =~ ^[0-9]+$ ]]; then
   BUZZER_GPIO_PIN="5"
 fi
 
@@ -152,12 +165,12 @@ SupplementaryGroups=video render
 PermissionsStartOnly=true
 WorkingDirectory=$PROJECT_DIR
 # Force buzzer pin LOW as early as possible to avoid unwanted tone at boot.
-ExecStartPre=-/usr/bin/raspi-gpio set 5 op dl
+ExecStartPre=-/usr/bin/raspi-gpio set $BUZZER_GPIO_PIN op dl
 ExecStart=/bin/bash -lc 'source "$VENV_ACTIVATE" && exec python "$MAIN_PY"'
 Restart=on-failure
 RestartSec=5s
 # Keep buzzer pin LOW when service stops/shuts down.
-ExecStopPost=-/usr/bin/raspi-gpio set 5 op dl
+ExecStopPost=-/usr/bin/raspi-gpio set $BUZZER_GPIO_PIN op dl
 Environment=PYTHONUNBUFFERED=1
 Environment=TZ=Asia/Jakarta
 StandardOutput=journal
