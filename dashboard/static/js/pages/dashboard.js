@@ -1,5 +1,5 @@
 /**
- * dashboard.js — NEUROSENSE real-time dashboard
+ * dashboard.js — NEUROVELIS real-time dashboard
  * Consumes SSE stream from /stream and updates Chart.js charts + metric cards.
  */
 
@@ -24,7 +24,7 @@ Chart.defaults.borderColor = "#d0d9e4";
 Chart.defaults.font.family = '"IBM Plex Sans", "Segoe UI", Roboto, sans-serif';
 Chart.defaults.font.size = 11;
 
-const warmupUI = window.NeurosenseWarmupUI || null;
+const warmupUI = window.NeurovelisWarmupUI || null;
 
 const CHART_OPTIONS = (yLabel, suggestedMin, suggestedMax) => ({
   animation: false,
@@ -202,8 +202,8 @@ function updateAlert(d) {
 const statusDot = byId("status-dot");
 const lastUpdate = byId("last-update");
 const footerTs = byId("footer-ts");
-const sseClient = window.NeurosenseSSEClient || null;
-const chartUtils = window.NeurosenseChartUtils || null;
+const sseClient = window.NeurovelisSSEClient || null;
+const chartUtils = window.NeurovelisChartUtils || null;
 let dashboardStream = null;
 let unregisterChartResize = null;
 let pendingRealtimeEvent = null;
@@ -368,7 +368,7 @@ function connect() {
     parseJson: true,
     onOpen: () => {
       if (statusDot) statusDot.className = "live";
-      console.info("[NEUROSENSE] SSE connected.");
+      console.info("[NEUROVELIS] SSE connected.");
     },
     onJson: (d) => {
       const warm = warmupUI

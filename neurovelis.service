@@ -1,5 +1,5 @@
 [Unit]
-Description=NEUROSENSE Sensor Data Collection & Dashboard
+Description=NEUROVELIS Sensor Data Collection & Dashboard
 After=local-fs.target systemd-udev-settle.service
 Wants=systemd-udev-settle.service
 
@@ -9,19 +9,19 @@ User=pi
 Group=pi
 SupplementaryGroups=video render
 PermissionsStartOnly=true
-WorkingDirectory=/home/pi/neurosense
+WorkingDirectory=/home/pi/neurovelis
 # Activate virtual environment first, then run app with that python.
 # NOTE: update path to your actual activate script.
 # Force buzzer pin LOW as early as possible to avoid unwanted tone at boot.
 ExecStartPre=-/bin/sh -lc '/usr/bin/raspi-gpio set 5 ip pd >/dev/null 2>&1 || true; /usr/bin/raspi-gpio set 5 op dl >/dev/null 2>&1 || true'
-ExecStart=/bin/bash -lc 'source /home/pi/neurosense/.venv/bin/activate && exec python /home/pi/neurosense/main.py'
+ExecStart=/bin/bash -lc 'source /home/pi/neurovelis/.venv/bin/activate && exec python /home/pi/neurovelis/main.py'
 Restart=on-failure
 RestartSec=5s
 # Keep buzzer pin LOW when service stops/shuts down.
 ExecStopPost=-/bin/sh -lc '/usr/bin/raspi-gpio set 5 op dl >/dev/null 2>&1 || true; /usr/bin/raspi-gpio set 5 ip pd >/dev/null 2>&1 || true'
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=neurosense
+SyslogIdentifier=neurovelis
 
 # Environment variables (optional — set timezone for correct log timestamps)
 Environment=TZ=Asia/Jakarta

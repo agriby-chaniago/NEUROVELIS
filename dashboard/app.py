@@ -69,7 +69,7 @@ def create_app(
     _model_inference_service = model_inference_service
 
     app = Flask(__name__, template_folder="templates", static_folder="static")
-    app.config["SECRET_KEY"] = "neurosense-dev-key"
+    app.config["SECRET_KEY"] = "neurovelis-dev-key"
 
     # ── Routes ────────────────────────────────────────────────────────
 

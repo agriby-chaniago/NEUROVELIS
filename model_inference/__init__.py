@@ -1,1 +1,1 @@
-"""Model inference package for NEUROSENSE."""
+"""Model inference package for NEUROVELIS."""

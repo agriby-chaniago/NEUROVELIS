@@ -68,7 +68,7 @@ SESSION_SENSOR_FIELDS = [
 
 class SessionManager:
     """
-    Controls data collection sessions for the NeuroSense experiment.
+    Controls data collection sessions for the NeuroVelis experiment.
 
     Inject sensor_manager and camera_reader at construction time; both
     are optional — missing components are silently skipped (useful for

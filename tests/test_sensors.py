@@ -150,7 +150,7 @@ class TestCSVLogger:
         time.sleep(0.2)   # give writer thread time to flush
         logger.stop()
 
-        csv_files = list(tmp_path.glob("neurosense_*.csv"))
+        csv_files = list(tmp_path.glob("neurovelis_*.csv"))
         assert len(csv_files) == 1, "Expected one CSV file to be created"
 
         content = csv_files[0].read_text(encoding="utf-8")

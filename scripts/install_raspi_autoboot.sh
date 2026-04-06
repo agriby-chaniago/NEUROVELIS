@@ -45,7 +45,7 @@ resolve_python_bin() {
 
   candidates+=(
     "$PROJECT_DIR/.venv/bin/python"
-    "$RUN_HOME/neurosense-env/bin/python"
+    "$RUN_HOME/neurovelis-env/bin/python"
     "$RUN_HOME/.venv/bin/python"
   )
 
@@ -64,15 +64,22 @@ PYTHON_BIN="$(resolve_python_bin "${1:-}" || true)"
 VENV_ACTIVATE=""
 MAIN_PY="$PROJECT_DIR/main.py"
 KIOSK_SCRIPT="$PROJECT_DIR/scripts/open_model_kiosk.sh"
-SERVICE_FILE="/etc/systemd/system/neurosense.service"
+SERVICE_FILE="/etc/systemd/system/neurovelis.service"
 BOOT_CONFIG_FILE=""
 BOOT_CONFIG_UPDATED=0
-SHUTDOWN_HOOK_FILE="/usr/lib/systemd/system-shutdown/neurosense-buzzer-low"
+SHUTDOWN_HOOK_FILE="/usr/lib/systemd/system-shutdown/neurovelis-buzzer-low"
 SHUTDOWN_HOOK_INSTALLED=0
+LEGACY_OLD_BRAND_HEAD="neuro"
+LEGACY_OLD_BRAND_TAIL="sense"
+LEGACY_OLD_BRAND="${LEGACY_OLD_BRAND_HEAD}${LEGACY_OLD_BRAND_TAIL}"
+LEGACY_SERVICE_NAME="${LEGACY_OLD_BRAND}.service"
+LEGACY_SERVICE_FILE="/etc/systemd/system/${LEGACY_OLD_BRAND}.service"
+LEGACY_SHUTDOWN_HOOK_FILE="/usr/lib/systemd/system-shutdown/${LEGACY_OLD_BRAND}-buzzer-low"
 AUTOSTART_FILE="/etc/xdg/lxsession/LXDE-pi/autostart"
 USER_AUTOSTART_FILE="$RUN_HOME/.config/lxsession/LXDE-pi/autostart"
 DESKTOP_AUTOSTART_DIR="$RUN_HOME/.config/autostart"
-DESKTOP_AUTOSTART_FILE="$DESKTOP_AUTOSTART_DIR/neurosense-kiosk.desktop"
+DESKTOP_AUTOSTART_FILE="$DESKTOP_AUTOSTART_DIR/neurovelis-kiosk.desktop"
+LEGACY_DESKTOP_AUTOSTART_FILE="$DESKTOP_AUTOSTART_DIR/${LEGACY_OLD_BRAND}-kiosk.desktop"
 KIOSK_LINE="@$KIOSK_SCRIPT http://127.0.0.1:5000/model http://127.0.0.1:5000/health"
 
 ensure_buzzer_boot_default_low() {
@@ -105,7 +112,7 @@ ensure_buzzer_boot_default_low() {
   if [[ "$need_pd" -eq 1 || "$need_low" -eq 1 ]]; then
     {
       echo ""
-      echo "# NEUROSENSE: keep buzzer pin low during boot"
+      echo "# NEUROVELIS: keep buzzer pin low during boot"
       if [[ "$need_pd" -eq 1 ]]; then
         echo "$line_pd"
       fi
@@ -125,7 +132,7 @@ install_shutdown_buzzer_hook() {
   mkdir -p "$(dirname "$SHUTDOWN_HOOK_FILE")"
   cat > "$SHUTDOWN_HOOK_FILE" <<EOF
 #!/bin/sh
-# NEUROSENSE: force buzzer GPIO LOW at very late shutdown/reboot stage.
+# NEUROVELIS: force buzzer GPIO LOW at very late shutdown/reboot stage.
 PIN="$pin"
 if [ -x /usr/bin/raspi-gpio ]; then
   # Repeat sequence to reduce audible chirp during rail transition.
@@ -157,12 +164,27 @@ PY
   echo "$pin"
 }
 
+cleanup_legacy_brand_artifacts() {
+  # Stop and disable the legacy unit if it still exists from previous installs.
+  systemctl disable --now "$LEGACY_SERVICE_NAME" >/dev/null 2>&1 || true
+
+  if [[ -f "$LEGACY_SERVICE_FILE" ]]; then
+    rm -f "$LEGACY_SERVICE_FILE"
+  fi
+  if [[ -f "$LEGACY_SHUTDOWN_HOOK_FILE" ]]; then
+    rm -f "$LEGACY_SHUTDOWN_HOOK_FILE"
+  fi
+  if [[ -f "$LEGACY_DESKTOP_AUTOSTART_FILE" ]]; then
+    rm -f "$LEGACY_DESKTOP_AUTOSTART_FILE"
+  fi
+}
+
 if [[ -z "${PYTHON_BIN:-}" || ! -x "$PYTHON_BIN" ]]; then
   echo "Python virtualenv executable not found." >&2
   echo "Provide venv path explicitly, for example:" >&2
-  echo "  sudo bash scripts/install_raspi_autoboot.sh /home/$RUN_USER/neurosense-env/bin/activate" >&2
+  echo "  sudo bash scripts/install_raspi_autoboot.sh /home/$RUN_USER/neurovelis-env/bin/activate" >&2
   echo "Or via env var:" >&2
-  echo "  sudo VENV_PYTHON=/home/$RUN_USER/neurosense-env/bin/python bash scripts/install_raspi_autoboot.sh" >&2
+  echo "  sudo VENV_PYTHON=/home/$RUN_USER/neurovelis-env/bin/python bash scripts/install_raspi_autoboot.sh" >&2
   exit 1
 fi
 
@@ -191,7 +213,7 @@ install_shutdown_buzzer_hook "$BUZZER_GPIO_PIN"
 
 cat > "$SERVICE_FILE" <<EOF
 [Unit]
-Description=NEUROSENSE Sensor Data Collection & Dashboard
+Description=NEUROVELIS Sensor Data Collection & Dashboard
 After=local-fs.target systemd-udev-settle.service
 Wants=systemd-udev-settle.service
 
@@ -213,14 +235,15 @@ Environment=PYTHONUNBUFFERED=1
 Environment=TZ=Asia/Jakarta
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=neurosense
+SyslogIdentifier=neurovelis
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
+cleanup_legacy_brand_artifacts
 systemctl daemon-reload
-systemctl enable --now neurosense.service
+systemctl enable --now neurovelis.service
 
 if [[ -f "$AUTOSTART_FILE" ]]; then
   TARGET_AUTOSTART="$AUTOSTART_FILE"
@@ -239,8 +262,8 @@ mkdir -p "$DESKTOP_AUTOSTART_DIR"
 cat > "$DESKTOP_AUTOSTART_FILE" <<EOF
 [Desktop Entry]
 Type=Application
-Name=NEUROSENSE Kiosk
-Comment=Open NEUROSENSE /model dashboard in kiosk mode
+Name=NEUROVELIS Kiosk
+Comment=Open NEUROVELIS /model dashboard in kiosk mode
 Exec=$KIOSK_SCRIPT http://127.0.0.1:5000/model http://127.0.0.1:5000/health
 Terminal=false
 X-GNOME-Autostart-enabled=true
@@ -249,7 +272,7 @@ EOF
 chown -R "$RUN_USER:$RUN_USER" "$RUN_HOME/.config"
 
 echo ""
-echo "NEUROSENSE auto-boot setup complete."
+echo "NEUROVELIS auto-boot setup complete."
 echo "- systemd service  : $SERVICE_FILE"
 echo "- venv activate    : $VENV_ACTIVATE"
 if [[ -n "$BOOT_CONFIG_FILE" ]]; then
@@ -265,7 +288,7 @@ echo "- kiosk autostart  : $TARGET_AUTOSTART"
 echo "- desktop autostart: $DESKTOP_AUTOSTART_FILE"
 echo ""
 echo "Check service status with:"
-echo "  sudo systemctl status neurosense.service"
+echo "  sudo systemctl status neurovelis.service"
 echo ""
 echo "Reboot to test full boot flow:"
 echo "  sudo reboot"

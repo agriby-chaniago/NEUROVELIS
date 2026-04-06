@@ -1,5 +1,5 @@
 """
-main.py  –  NEUROSENSE entry point.
+main.py  –  NEUROVELIS entry point.
 
 Usage
 -----
@@ -32,7 +32,7 @@ def setup_logging(debug: bool = False):
     fmt   = "%(asctime)s  %(levelname)-8s  %(name)-30s  %(message)s"
     # Rotate at 5 MB, keep 5 backups (25 MB total) — prevents SD card filling up
     file_handler = logging.handlers.RotatingFileHandler(
-        "neurosense.log",
+        "neurovelis.log",
         maxBytes=5 * 1024 * 1024,  # 5 MB
         backupCount=5,
         encoding="utf-8",
@@ -53,14 +53,14 @@ def setup_logging(debug: bool = False):
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="NEUROSENSE Sensor System")
+    parser = argparse.ArgumentParser(description="NEUROVELIS Sensor System")
     parser.add_argument("--debug", action="store_true", help="Enable debug logging and Flask debug mode")
     args = parser.parse_args()
 
     setup_logging(debug=args.debug)
     logger = logging.getLogger("main")
     logger.info("═" * 60)
-    logger.info("NEUROSENSE starting (schema v%s)", config.DATA_SCHEMA_VERSION)
+    logger.info("NEUROVELIS starting (schema v%s)", config.DATA_SCHEMA_VERSION)
     logger.info("═" * 60)
 
     # ── Start CSV logger ─────────────────────────────────────────────────
@@ -125,7 +125,7 @@ def main():
         model_inference_service.stop()
         if camera_reader is not None:
             camera_reader.stop()
-        logger.info("NEUROSENSE stopped cleanly.")
+        logger.info("NEUROVELIS stopped cleanly.")
         sys.exit(0)
 
     signal.signal(signal.SIGINT,  shutdown)

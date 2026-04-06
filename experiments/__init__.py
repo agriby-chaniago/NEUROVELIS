@@ -1,5 +1,5 @@
 """
-experiments/  –  NeuroSense experiment data collection package.
+experiments/  –  NeuroVelis experiment data collection package.
 
 Modules
 -------

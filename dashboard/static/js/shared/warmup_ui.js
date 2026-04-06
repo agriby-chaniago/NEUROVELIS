@@ -404,7 +404,7 @@
     return warm;
   }
 
-  global.NeurosenseWarmupUI = {
+  global.NeurovelisWarmupUI = {
     normalizeState,
     apply,
   };

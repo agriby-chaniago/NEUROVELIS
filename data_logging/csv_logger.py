@@ -3,7 +3,7 @@ data_logging/csv_logger.py  –  Thread-safe CSV logger using a queue + single w
 
 Design: all sensor threads enqueue rows; one dedicated writer thread
 dequeues and writes. No lock contention on the file handle.
-File is rotated daily: neurosense_YYYY-MM-DD.csv
+File is rotated daily: neurovelis_YYYY-MM-DD.csv
 """
 
 import csv
@@ -120,7 +120,7 @@ class CSVLogger:
     def _get_filepath(self) -> str:
         """Return today's CSV file path."""
         date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        return str(self._data_dir / f"neurosense_{date_str}.csv")
+        return str(self._data_dir / f"neurovelis_{date_str}.csv")
 
     def _open_file(self, filepath: str):
         """

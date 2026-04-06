@@ -1,6 +1,6 @@
 """
 sensors/__init__.py
-Abstract base class for all NEUROSENSE sensors.
+Abstract base class for all NEUROVELIS sensors.
 
 To add a new sensor:
   1. Create sensors/my_sensor_reader.py

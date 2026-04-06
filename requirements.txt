@@ -1,4 +1,4 @@
-# NEUROSENSE - Raspberry Pi 5 Sensor System
+# NEUROVELIS - Raspberry Pi 5 Sensor System
 # Pin this to exact versions for stable deployment
 # NOTE: No RPi.bme280 needed — BMP280 driver uses smbus2 directly.
 smbus2==0.4.3

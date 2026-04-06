@@ -93,7 +93,7 @@
     };
   }
 
-  global.NeurosenseChartUtils = {
+  global.NeurovelisChartUtils = {
     registerResponsiveCharts,
   };
 })(window);

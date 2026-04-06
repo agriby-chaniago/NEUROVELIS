@@ -2,19 +2,19 @@
 
 Dokumen ini membuat Raspberry Pi otomatis:
 
-- menjalankan backend NEUROSENSE saat boot
+- menjalankan backend NEUROVELIS saat boot
 - membuka dashboard `http://127.0.0.1:5000/model` dalam mode kiosk
 
 ## Prasyarat
 
 - Raspberry Pi OS Desktop (agar browser bisa auto-open)
-- Project sudah ada di Raspberry Pi (contoh: `/home/pi/NEUROSENSE`)
+- Project sudah ada di Raspberry Pi (contoh: `/home/pi/NEUROVELIS`)
 - Virtual environment sudah dibuat dan dependency sudah terpasang
 
 Contoh install dependency:
 
 ```bash
-cd /home/pi/NEUROSENSE
+cd /home/pi/NEUROVELIS
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
@@ -24,42 +24,42 @@ python3 -m venv .venv
 Dari folder project di Raspberry Pi:
 
 ```bash
-cd /home/pi/NEUROSENSE
+cd /home/pi/NEUROVELIS
 sudo bash scripts/install_raspi_autoboot.sh
 ```
 
 Jika venv berada di luar folder project, kirim path python venv secara eksplisit:
 
 ```bash
-cd /home/neurosense/NEUROSENSE
-sudo bash scripts/install_raspi_autoboot.sh /home/neurosense/neurosense-env/bin/activate
+cd /home/neurovelis/NEUROVELIS
+sudo bash scripts/install_raspi_autoboot.sh /home/neurovelis/neurovelis-env/bin/activate
 ```
 
 Alternatif lewat environment variable:
 
 ```bash
-cd /home/neurosense/NEUROSENSE
-sudo VENV_PYTHON=/home/neurosense/neurosense-env/bin/python bash scripts/install_raspi_autoboot.sh
+cd /home/neurovelis/NEUROVELIS
+sudo VENV_PYTHON=/home/neurovelis/neurovelis-env/bin/python bash scripts/install_raspi_autoboot.sh
 ```
 
 Script ini otomatis:
 
-- membuat `/etc/systemd/system/neurosense.service`
+- membuat `/etc/systemd/system/neurovelis.service`
 - `enable` + `start` service
 - memaksa pin buzzer (GPIO D5) tetap LOW saat boot/shutdown service
 - menulis default firmware GPIO `gpio=5=ip,pd` + `gpio=5=op,dl`
   di boot config Raspberry Pi
-- memasang hook `/usr/lib/systemd/system-shutdown/neurosense-buzzer-low`
+- memasang hook `/usr/lib/systemd/system-shutdown/neurovelis-buzzer-low`
   agar fase reboot/poweroff paling akhir tetap memaksa GPIO buzzer LOW
 - menambahkan autostart Chromium kiosk untuk `/model`
   pada `~/.config/lxsession/LXDE-pi/autostart` (legacy)
-  dan `~/.config/autostart/neurosense-kiosk.desktop` (XDG desktop autostart)
+  dan `~/.config/autostart/neurovelis-kiosk.desktop` (XDG desktop autostart)
 
 ## Cek Status
 
 ```bash
-sudo systemctl status neurosense.service
-journalctl -u neurosense.service -n 100 --no-pager
+sudo systemctl status neurovelis.service
+journalctl -u neurovelis.service -n 100 --no-pager
 ```
 
 ## Uji Boot Penuh
@@ -70,7 +70,7 @@ sudo reboot
 
 Saat boot sukses:
 
-- service NEUROSENSE aktif
+- service NEUROVELIS aktif
 - browser Chromium terbuka otomatis ke `/model`
 
 ## Catatan
@@ -87,7 +87,7 @@ Saat boot sukses:
 Gejala umum:
 
 - buzzer bunyi saat Raspberry Pi belum selesai boot
-- buzzer tetap bunyi sampai `neurosense.service` aktif
+- buzzer tetap bunyi sampai `neurovelis.service` aktif
 - saat shutdown/halt, buzzer bisa bunyi terus
 
 Penyebab paling umum: pin buzzer mengambang (floating) sebelum service Python
@@ -107,7 +107,7 @@ floating saat transisi stop/reboot.
 Verifikasi cepat:
 
 ```bash
-sudo systemctl cat neurosense.service
+sudo systemctl cat neurovelis.service
 grep -n "gpio=.*op,dl" /boot/firmware/config.txt /boot/config.txt 2>/dev/null
 ```
 
@@ -138,7 +138,7 @@ Pilih: `System Options` → `Boot / Auto Login` → `Desktop Autologin`.
 1. Cek file autostart terpasang:
 
 ```bash
-ls -l ~/.config/autostart/neurosense-kiosk.desktop
+ls -l ~/.config/autostart/neurovelis-kiosk.desktop
 ```
 
 1. Jika popup keyring minta password terus muncul, atur keyring agar tidak meminta
@@ -166,13 +166,13 @@ CAMERA_WORKER_PYTHON = "/usr/bin/python3"
 1. Restart service:
 
 ```bash
-sudo systemctl restart neurosense.service
+sudo systemctl restart neurovelis.service
 ```
 
 1. Verifikasi log:
 
 ```bash
-journalctl -u neurosense.service -n 120 --no-pager
+journalctl -u neurovelis.service -n 120 --no-pager
 ```
 
 ### Jika Muncul `ModuleNotFoundError: libcamera._libcamera`
@@ -194,5 +194,5 @@ sudo mv /usr/local/lib/python3.11/site-packages/libcamera* /root/libcamera-py-ba
 sudo mv /usr/local/lib/python3.11/dist-packages/libcamera* /root/libcamera-py-backup/ 2>/dev/null || true
 sudo apt install --reinstall python3-libcamera python3-picamera2
 sudo ldconfig
-sudo systemctl restart neurosense.service
+sudo systemctl restart neurovelis.service
 ```

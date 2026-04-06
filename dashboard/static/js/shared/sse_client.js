@@ -14,7 +14,7 @@
     const pauseWhenHidden = opts.pauseWhenHidden === true;
 
     if (!url) {
-      throw new Error("NeurosenseSSEClient.connect requires a non-empty url");
+      throw new Error("NeurovelisSSEClient.connect requires a non-empty url");
     }
 
     let es = null;
@@ -127,7 +127,7 @@
     };
   }
 
-  global.NeurosenseSSEClient = {
+  global.NeurovelisSSEClient = {
     connect,
   };
 })(window);

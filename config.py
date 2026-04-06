@@ -1,5 +1,5 @@
 """
-NEUROSENSE – Central Configuration
+NEUROVELIS – Central Configuration
 All hardware addresses, GPIO pins, sampling settings, and paths live here.
 Change sensor wiring? Update this file only.
 """

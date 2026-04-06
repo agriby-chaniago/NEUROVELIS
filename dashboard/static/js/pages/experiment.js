@@ -1,11 +1,11 @@
 "use strict";
 
-const sseClient = window.NeurosenseSSEClient || null;
+const sseClient = window.NeurovelisSSEClient || null;
 let warmupStream = null;
 
 function connectWarmupStream() {
   if (!sseClient) return;
-  if (!window.NeurosenseWarmupUI) return;
+  if (!window.NeurovelisWarmupUI) return;
   if (warmupStream) warmupStream.close();
 
   warmupStream = sseClient.connect({
@@ -15,7 +15,7 @@ function connectWarmupStream() {
     pauseWhenHidden: true,
     parseJson: true,
     onJson: (data) => {
-      window.NeurosenseWarmupUI.apply(data, { showOverlay: false });
+      window.NeurovelisWarmupUI.apply(data, { showOverlay: false });
     },
   });
 }
