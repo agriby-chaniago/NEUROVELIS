@@ -66,6 +66,30 @@ class MAX30102Reader(BaseSensor):
         self._RECOVER_RETRY_S = 5.0
         # Weak-signal streak for runtime LED auto-gain.
         self._weak_signal_streak: int = 0
+        # Strong-signal streak for runtime LED attenuation.
+        self._strong_signal_streak: int = 0
+
+    def _reset_optical_state_after_gain_change(
+        self,
+        red_seed: list[int] | None = None,
+        ir_seed: list[int] | None = None,
+    ) -> None:
+        """Flush optical history so old-gain and new-gain samples do not mix."""
+        self._ring_ir.clear()
+        self._ring_red.clear()
+        if ir_seed:
+            self._ring_ir.extend(ir_seed)
+        if red_seed:
+            self._ring_red.extend(red_seed)
+
+        self._ema_hr = None
+        self._ema_spo2 = None
+        self._reject_count = 0
+        self._prev_hr_bpm = None
+        self._spo2_guard_count = 0
+        self._prev_ir_mean = None
+        self._weak_signal_streak = 0
+        self._strong_signal_streak = 0
 
     def calibrate(self) -> None:
         """Initialise the MAX30102 and verify it responds with the correct PART_ID."""
@@ -81,6 +105,7 @@ class MAX30102Reader(BaseSensor):
             self._spo2_guard_count = 0
             self._prev_ir_mean = None
             self._weak_signal_streak = 0
+            self._strong_signal_streak = 0
             self._ring_ir.clear()
             self._ring_red.clear()
             part_id = self._sensor.get_part_id()
@@ -235,8 +260,18 @@ class MAX30102Reader(BaseSensor):
             )
 
             min_ir_signal = float(getattr(config, "MAX30102_MIN_IR_SIGNAL", 5000))
+            max_ir_signal = float(getattr(config, "MAX30102_MAX_IR_SIGNAL", 220000))
+            clip_level = float(getattr(config, "MAX30102_SATURATION_CLIP_LEVEL", 261000))
+            clip_ratio_limit = float(getattr(config, "MAX30102_SATURATION_CLIP_RATIO", 0.20))
+            ir_clip_ratio = (
+                sum(1 for v in ir_data if v >= clip_level) / float(len(ir_data))
+                if ir_data
+                else 0.0
+            )
+
             if ir_mean_now < min_ir_signal:
                 self._weak_signal_streak += 1
+                self._strong_signal_streak = 0
                 gain_streak = max(
                     1,
                     int(getattr(config, "MAX30102_WEAK_SIGNAL_STREAK_FOR_GAIN", 3)),
@@ -259,15 +294,64 @@ class MAX30102Reader(BaseSensor):
                             ir_pa,
                             ir_pa * 0.2,
                         )
+                        self._reset_optical_state_after_gain_change(
+                            red_seed=red_step,
+                            ir_seed=ir_step,
+                        )
+                        return {
+                            "heart_rate_bpm": None,
+                            "spo2_percent": None,
+                            "hr_valid": False,
+                            "spo2_valid": False,
+                        }
                     self._weak_signal_streak = 0
+            elif ir_mean_now > max_ir_signal or ir_clip_ratio >= clip_ratio_limit:
+                self._strong_signal_streak += 1
+                self._weak_signal_streak = 0
+                attenuate_streak = max(
+                    1,
+                    int(getattr(config, "MAX30102_STRONG_SIGNAL_STREAK_FOR_ATTENUATE", 2)),
+                )
+                auto_attenuate_enabled = bool(
+                    getattr(config, "MAX30102_AUTO_LED_ATTENUATE", True)
+                )
+                if auto_attenuate_enabled and self._strong_signal_streak >= attenuate_streak and self._sensor is not None:
+                    step = max(1, int(getattr(config, "MAX30102_LED_ATTENUATE_STEP", 0x08)))
+                    min_pa = int(getattr(config, "MAX30102_LED_PA_MIN", 0x10))
+                    red_pa, ir_pa, changed = self._sensor.decrease_led_current(
+                        step=step,
+                        min_pa=min_pa,
+                    )
+                    if changed:
+                        logger.warning(
+                            "MAX30102 strong IR/saturation (ir_mean=%.0f, clip_ratio=%.1f%%) -> reducing LED current to RED=0x%02X (%.1fmA), IR=0x%02X (%.1fmA)",
+                            ir_mean_now,
+                            ir_clip_ratio * 100.0,
+                            red_pa,
+                            red_pa * 0.2,
+                            ir_pa,
+                            ir_pa * 0.2,
+                        )
+                        self._reset_optical_state_after_gain_change(
+                            red_seed=red_step,
+                            ir_seed=ir_step,
+                        )
+                        return {
+                            "heart_rate_bpm": None,
+                            "spo2_percent": None,
+                            "hr_valid": False,
+                            "spo2_valid": False,
+                        }
+                    self._strong_signal_streak = 0
             else:
-                if self._weak_signal_streak:
+                if self._weak_signal_streak or self._strong_signal_streak:
                     logger.info(
-                        "MAX30102 IR signal recovered (ir_mean=%.0f >= %.0f)",
+                        "MAX30102 IR signal stabilised (ir_mean=%.0f, clip_ratio=%.1f%%)",
                         ir_mean_now,
-                        min_ir_signal,
+                        ir_clip_ratio * 100.0,
                     )
                 self._weak_signal_streak = 0
+                self._strong_signal_streak = 0
 
             hr, hr_valid, spo2, spo2_valid, hr_corr = calc_hr_and_spo2(
                 ir_data, red_data,
@@ -289,6 +373,7 @@ class MAX30102Reader(BaseSensor):
                 self._spo2_guard_count = 0
                 self._prev_ir_mean = None
                 self._weak_signal_streak = 0
+                self._strong_signal_streak = 0
                 self._ring_ir.clear()    # flush stale low-IR samples
                 self._ring_red.clear()
             else:

@@ -121,6 +121,30 @@ class MAX30102:
 
         return self._red_led_pa, self._ir_led_pa, changed
 
+    def decrease_led_current(self, step: int = 0x08, min_pa: int = 0x00) -> tuple[int, int, bool]:
+        """
+        Decrease both RED and IR LED amplitudes by `step` down to `min_pa`.
+
+        Returns
+        -------
+        tuple[int, int, bool]
+            (new_red_pa, new_ir_pa, changed)
+        """
+        step_i = max(1, int(step))
+        min_i = max(0x00, min(0x7F, int(min_pa)))
+
+        new_red = max(min_i, self._red_led_pa - step_i)
+        new_ir = max(min_i, self._ir_led_pa - step_i)
+        changed = (new_red != self._red_led_pa) or (new_ir != self._ir_led_pa)
+
+        if changed:
+            self._red_led_pa = new_red
+            self._ir_led_pa = new_ir
+            self._write(REG_LED1_PA, self._red_led_pa)
+            self._write(REG_LED2_PA, self._ir_led_pa)
+
+        return self._red_led_pa, self._ir_led_pa, changed
+
     # ── I2C primitives ───────────────────────────────────────────────────
 
     def _write(self, register: int, value: int):

@@ -35,9 +35,10 @@ MAX30102_MIN_SAMPLES = 50
 
 # LED pulse amplitude (PA) registers for MAX30102.
 # Formula: current_mA ~= value * 0.2. Valid range 0x00..0x7F.
-# Higher values raise IR signal but can saturate if finger pressure is very strong.
-MAX30102_LED_RED_PA = 0x50   # 16.0 mA
-MAX30102_LED_IR_PA = 0x60    # 19.2 mA
+# Start from moderate current; runtime controller will raise/lower as needed.
+MAX30102_LED_RED_PA = 0x30   # 9.6 mA
+MAX30102_LED_IR_PA = 0x38    # 11.2 mA
+MAX30102_LED_PA_MIN = 0x10   # 3.2 mA floor
 MAX30102_LED_PA_MAX = 0x7F   # 25.4 mA hardware max
 
 # Weak-signal policy for auto gain.
@@ -47,6 +48,15 @@ MAX30102_MIN_IR_SIGNAL = 5000
 MAX30102_AUTO_LED_GAIN = True
 MAX30102_LED_GAIN_STEP = 0x08
 MAX30102_WEAK_SIGNAL_STREAK_FOR_GAIN = 3
+
+# Strong-signal / saturation policy for auto attenuation.
+# Prevents ADC clipping (18-bit max = 262143) that can break SpO2 quality.
+MAX30102_MAX_IR_SIGNAL = 220000
+MAX30102_SATURATION_CLIP_LEVEL = 261000
+MAX30102_SATURATION_CLIP_RATIO = 0.20
+MAX30102_AUTO_LED_ATTENUATE = True
+MAX30102_LED_ATTENUATE_STEP = 0x08
+MAX30102_STRONG_SIGNAL_STREAK_FOR_ATTENUATE = 2
 
 # ─── Grove GSR Sensor ─────────────────────────────────────────────────────
 # Wiring: Plug Grove cable into A0 port on Grove Base HAT
