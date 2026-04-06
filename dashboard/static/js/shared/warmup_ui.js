@@ -21,6 +21,14 @@
     overlayMinSeconds: 0.2,
   };
 
+  const stabilizationTicker = {
+    intervalId: null,
+    startedAtMs: 0,
+  };
+
+  const STABILIZATION_MESSAGE =
+    "Jaga sensor tetap stabil dan hadap kamera sampai status RUNNING.";
+
   function setTextIfChanged(el, nextText, key) {
     if (!el) return;
     const value = String(nextText);
@@ -148,6 +156,58 @@
     }
   }
 
+  function stopStabilizationTicker() {
+    if (stabilizationTicker.intervalId !== null) {
+      window.clearInterval(stabilizationTicker.intervalId);
+      stabilizationTicker.intervalId = null;
+    }
+    stabilizationTicker.startedAtMs = 0;
+  }
+
+  function stabilizationElapsedSeconds() {
+    if (stabilizationTicker.startedAtMs <= 0) return 0;
+    return Math.max(0, (Date.now() - stabilizationTicker.startedAtMs) / 1000);
+  }
+
+  function refreshStabilizationTicker() {
+    const elapsed = stabilizationElapsedSeconds();
+    const bannerCountdown = document.getElementById("warmup-banner-countdown");
+    const bannerReason = document.getElementById("warmup-banner-reason");
+
+    setTextIfChanged(
+      bannerCountdown,
+      formatCountdown(elapsed),
+      "bannerCountdownText",
+    );
+    setTextIfChanged(
+      bannerReason,
+      STABILIZATION_MESSAGE,
+      "bannerReasonText",
+    );
+  }
+
+  function syncStabilizationTicker(active) {
+    if (!active) {
+      stopStabilizationTicker();
+      return 0;
+    }
+
+    if (stabilizationTicker.startedAtMs <= 0) {
+      stabilizationTicker.startedAtMs = Date.now();
+    }
+
+    refreshStabilizationTicker();
+
+    if (stabilizationTicker.intervalId === null) {
+      stabilizationTicker.intervalId = window.setInterval(
+        refreshStabilizationTicker,
+        100,
+      );
+    }
+
+    return stabilizationElapsedSeconds();
+  }
+
   function refreshWarmupTicker() {
     const remaining = Math.max(0, (warmupTicker.endsAtMs - Date.now()) / 1000);
     const bannerCountdown = document.getElementById("warmup-banner-countdown");
@@ -194,6 +254,14 @@
   function apply(data, options) {
     const opts = options || {};
     const warm = normalizeState(data || {});
+    const stabilizationActive =
+      !warm.warmupActive &&
+      warm.runtimeState === "DEGRADED" &&
+      !String(warm.runtimeReason || "").startsWith("SERVICE_INIT");
+    const stabilizationElapsed = syncStabilizationTicker(stabilizationActive);
+    warm.stabilizeActive = stabilizationActive;
+    warm.stabilizeElapsed = stabilizationElapsed;
+    warm.stabilizeMessage = STABILIZATION_MESSAGE;
 
     const banner = document.getElementById("warmup-banner");
     const bannerState = document.getElementById("warmup-banner-state");
@@ -201,23 +269,26 @@
     const bannerReason = document.getElementById("warmup-banner-reason");
 
     const shouldShowBanner =
-      warm.warmupActive || warm.runtimeState === "WAITING_SENSOR";
+      warm.warmupActive ||
+      warm.runtimeState === "WAITING_SENSOR" ||
+      stabilizationActive;
+    const bannerStateText = stabilizationActive
+      ? "STABILIZING"
+      : stateText(warm.runtimeState);
+    const bannerStateClass = stabilizationActive
+      ? "is-waiting"
+      : stateClass(warm.runtimeState);
+    const bannerCountdownText = warm.warmupActive
+      ? formatCountdown(warm.remaining)
+      : stabilizationActive
+        ? formatCountdown(stabilizationElapsed)
+        : "--";
+
     setVisibleIfChanged(banner, shouldShowBanner, "bannerVisible");
-    setStateClassIfChanged(
-      banner,
-      stateClass(warm.runtimeState),
-      "bannerClass",
-    );
-    setTextIfChanged(
-      bannerState,
-      stateText(warm.runtimeState),
-      "bannerStateText",
-    );
-    setTextIfChanged(
-      bannerCountdown,
-      warm.warmupActive ? formatCountdown(warm.remaining) : "--",
-      "bannerCountdownText",
-    );
+    setStateClassIfChanged(banner, bannerStateClass, "bannerClass");
+    setTextIfChanged(bannerState, bannerStateText, "bannerStateText");
+    setTextIfChanged(bannerCountdown, bannerCountdownText, "bannerCountdownText");
+
     if (bannerReason) {
       if (warm.runtimeState === "WAITING_SENSOR") {
         setTextIfChanged(
@@ -229,6 +300,12 @@
         setTextIfChanged(
           bannerReason,
           "Stabilisasi data model sedang berlangsung.",
+          "bannerReasonText",
+        );
+      } else if (stabilizationActive) {
+        setTextIfChanged(
+          bannerReason,
+          STABILIZATION_MESSAGE,
           "bannerReasonText",
         );
       } else {
@@ -267,6 +344,9 @@
     );
 
     syncWarmupTicker(warm, showOverlay, overlayMinSeconds);
+    if (warm.warmupActive) {
+      stopStabilizationTicker();
+    }
 
     return warm;
   }

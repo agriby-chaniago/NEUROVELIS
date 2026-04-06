@@ -75,12 +75,13 @@ const probChart = new Chart(document.getElementById("chart-prob"), {
     ],
   },
   options: {
+    indexAxis: "y",
     animation: false,
     responsive: true,
     maintainAspectRatio: false,
     plugins: { legend: { display: false } },
     scales: {
-      y: {
+      x: {
         min: 0,
         max: 1,
         ticks: {
@@ -88,7 +89,7 @@ const probChart = new Chart(document.getElementById("chart-prob"), {
           font: { size: 9 },
         },
       },
-      x: { ticks: { font: { size: 9 } } },
+      y: { ticks: { font: { size: 9 } } },
     },
   },
 });
@@ -681,9 +682,16 @@ function updateCards(data, warm) {
   }
 
   const warmCountdown = warm?.warmupActive ? `${warm.countdown}s` : null;
+  const stabilizeCountdown = warm?.stabilizeActive
+    ? `${Number(warm.stabilizeElapsed || 0).toFixed(1)}s`
+    : null;
+  const stabilizeReason = warm?.stabilizeActive
+    ? `${warm.stabilizeMessage || "Stabilizing sensor/camera"} (${stabilizeCountdown})`
+    : null;
   setText(
     "val-reason",
     warmCountdown ||
+      stabilizeReason ||
       data.model_runtime_reason ||
       data.model_alert_reasons ||
       "-",
@@ -800,6 +808,10 @@ function connect() {
         if (statusDot) statusDot.className = "warmup";
         if (lastUpdate)
           lastUpdate.textContent = `Warmup in progress - ${warm.countdown}s`;
+      } else if (warm && warm.stabilizeActive) {
+        if (statusDot) statusDot.className = "warmup";
+        if (lastUpdate)
+          lastUpdate.textContent = `Stabilizing signal - ${Number(warm.stabilizeElapsed || 0).toFixed(1)}s`;
       } else if (warm && warm.runtimeState === "RUNNING") {
         if (statusDot) statusDot.className = "live";
         if (lastUpdate) lastUpdate.textContent = `Last update: ${now}`;

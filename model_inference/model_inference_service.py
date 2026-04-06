@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import deque
 import logging
+import random
 import threading
 import time
 from datetime import datetime, timezone
@@ -296,7 +297,10 @@ class ModelInferenceService:
     def _update_sensor_touch_state(self, sensor_data: dict, now: float) -> None:
         touched = self._is_sensor_touched(sensor_data)
         grace_s = max(1.0, min(3.0, float(getattr(config, "MODEL_SENSOR_TOUCH_GRACE_S", 2.0))))
-        warmup_s = max(0.0, float(getattr(config, "MODEL_CLASS_WARMUP_S", 2.0)))
+        warmup_default = max(0.0, float(getattr(config, "MODEL_CLASS_WARMUP_S", 4.0)))
+        warmup_min = max(0.0, float(getattr(config, "MODEL_CLASS_WARMUP_MIN_S", warmup_default)))
+        warmup_max = max(warmup_min, float(getattr(config, "MODEL_CLASS_WARMUP_MAX_S", warmup_default)))
+        warmup_s = random.uniform(warmup_min, warmup_max)
 
         if touched:
             self._sensor_touch_missing_since = None

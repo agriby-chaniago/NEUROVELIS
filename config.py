@@ -272,7 +272,9 @@ MODEL_REQUIRE_SPO2_VALID_FOR_FEATURE_WINDOW = False
 # If sensor is untouched, wait this grace period (1-3s recommended) before pausing inference.
 MODEL_SENSOR_TOUCH_GRACE_S = 2.0
 # Warmup hold after sensor touch/resume to stabilize class decision.
-MODEL_CLASS_WARMUP_S = 2.0
+MODEL_CLASS_WARMUP_S = 4.0
+MODEL_CLASS_WARMUP_MIN_S = 3.0
+MODEL_CLASS_WARMUP_MAX_S = 5.0
 
 # Final class order for the dashboard and API responses.
 MODEL_CLASSES = ["normal", "anxiety", "stress", "depression"]
