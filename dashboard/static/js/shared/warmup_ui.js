@@ -179,11 +179,7 @@
       formatCountdown(elapsed),
       "bannerCountdownText",
     );
-    setTextIfChanged(
-      bannerReason,
-      STABILIZATION_MESSAGE,
-      "bannerReasonText",
-    );
+    setTextIfChanged(bannerReason, STABILIZATION_MESSAGE, "bannerReasonText");
   }
 
   function syncStabilizationTicker(active) {
@@ -287,7 +283,11 @@
     setVisibleIfChanged(banner, shouldShowBanner, "bannerVisible");
     setStateClassIfChanged(banner, bannerStateClass, "bannerClass");
     setTextIfChanged(bannerState, bannerStateText, "bannerStateText");
-    setTextIfChanged(bannerCountdown, bannerCountdownText, "bannerCountdownText");
+    setTextIfChanged(
+      bannerCountdown,
+      bannerCountdownText,
+      "bannerCountdownText",
+    );
 
     if (bannerReason) {
       if (warm.runtimeState === "WAITING_SENSOR") {
