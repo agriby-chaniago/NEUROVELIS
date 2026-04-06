@@ -110,7 +110,7 @@ def calc_hr_and_spo2(
     # ── 2. HR via autocorrelation ───────────────────────────────────────────
     #    Search lag range covers 36–150 BPM (not 40–150) so that the harmonic
     #    doubling stage can reach lag*2 for lag=20 (true HR ~37.5 BPM).
-    #    At fs=25: lag_max = round(25×60/36) = 42; doubled_lag of 20 = 40 ≤ 42 ✓
+    #    At fs=25: lag_max = round(25x60/36) = 42; doubled_lag of 20 = 40 <= 42 (valid)
     #    Without this, doubled_lag=40 > lag_max=38 and the doubling is silently
     #    skipped → 75 BPM false read is accepted.
     #    ALERT_HR_LOW is still 40 BPM; the extra 36–40 BPM search band only

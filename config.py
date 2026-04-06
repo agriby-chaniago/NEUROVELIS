@@ -216,7 +216,7 @@ CAMERA_WORKER_PYTHON = "/usr/bin/python3"
 # considered stalled and restarted.
 CAMERA_WORKER_FRAME_TIMEOUT_S = 12.0
 
-# R↔B channel swap.
+# R/B channel swap.
 # OV64A40 (Arducam 64MP) via PiSP backend mengirim data BGR meskipun format
 # yang diminta RGB888 — ini bug/quirk driver libcamera + PiSP.
 # → CAMERA_SWAP_RB = True wajib untuk kamera ini.

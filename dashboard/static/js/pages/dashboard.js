@@ -480,14 +480,14 @@ async function recalibrateGSR() {
       const b10 = data.baseline_10bit ?? "?";
       const mx = data.max_conductance_us ?? "?";
       status.className = "ok";
-      status.textContent = `✓ Baseline ${b10} (max ≈ ${mx} µS)`;
+      status.textContent = `Baseline OK: ${b10} (max ≈ ${mx} µS)`;
     } else {
       status.className = "err";
-      status.textContent = "✗ " + (data.message || "error");
+      status.textContent = "Error: " + (data.message || "error");
     }
   } catch (e) {
     status.className = "err";
-    status.textContent = "✗ Koneksi gagal";
+    status.textContent = "Error: Koneksi gagal";
   }
 
   btn.disabled = false;
