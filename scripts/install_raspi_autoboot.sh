@@ -77,8 +77,11 @@ KIOSK_LINE="@$KIOSK_SCRIPT http://127.0.0.1:5000/model http://127.0.0.1:5000/hea
 
 ensure_buzzer_boot_default_low() {
   local pin="${1:-5}"
-  local line="gpio=${pin}=op,dl"
+  local line_pd="gpio=${pin}=ip,pd"
+  local line_low="gpio=${pin}=op,dl"
   local cfg
+  local need_pd=0
+  local need_low=0
 
   for cfg in /boot/firmware/config.txt /boot/config.txt; do
     if [[ -f "$cfg" ]]; then
@@ -92,11 +95,23 @@ ensure_buzzer_boot_default_low() {
     return 1
   fi
 
-  if ! grep -Fqx "$line" "$BOOT_CONFIG_FILE"; then
+  if ! grep -Fqx "$line_pd" "$BOOT_CONFIG_FILE"; then
+    need_pd=1
+  fi
+  if ! grep -Fqx "$line_low" "$BOOT_CONFIG_FILE"; then
+    need_low=1
+  fi
+
+  if [[ "$need_pd" -eq 1 || "$need_low" -eq 1 ]]; then
     {
       echo ""
       echo "# NEUROSENSE: keep buzzer pin low during boot"
-      echo "$line"
+      if [[ "$need_pd" -eq 1 ]]; then
+        echo "$line_pd"
+      fi
+      if [[ "$need_low" -eq 1 ]]; then
+        echo "$line_low"
+      fi
     } >> "$BOOT_CONFIG_FILE"
     BOOT_CONFIG_UPDATED=1
   fi
@@ -238,7 +253,7 @@ echo "NEUROSENSE auto-boot setup complete."
 echo "- systemd service  : $SERVICE_FILE"
 echo "- venv activate    : $VENV_ACTIVATE"
 if [[ -n "$BOOT_CONFIG_FILE" ]]; then
-  echo "- boot gpio default: $BOOT_CONFIG_FILE (gpio=$BUZZER_GPIO_PIN=op,dl)"
+  echo "- boot gpio default: $BOOT_CONFIG_FILE (gpio=$BUZZER_GPIO_PIN=ip,pd + gpio=$BUZZER_GPIO_PIN=op,dl)"
   if [[ "$BOOT_CONFIG_UPDATED" -eq 1 ]]; then
     echo "  note: boot config updated, reboot is required to apply firmware-level GPIO default"
   fi

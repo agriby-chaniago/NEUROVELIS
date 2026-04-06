@@ -47,7 +47,8 @@ Script ini otomatis:
 - membuat `/etc/systemd/system/neurosense.service`
 - `enable` + `start` service
 - memaksa pin buzzer (GPIO D5) tetap LOW saat boot/shutdown service
-- menulis default firmware GPIO `gpio=5=op,dl` di boot config Raspberry Pi
+- menulis default firmware GPIO `gpio=5=ip,pd` + `gpio=5=op,dl`
+  di boot config Raspberry Pi
 - memasang hook `/usr/lib/systemd/system-shutdown/neurosense-buzzer-low`
   agar fase reboot/poweroff paling akhir tetap memaksa GPIO buzzer LOW
 - menambahkan autostart Chromium kiosk untuk `/model`
@@ -96,7 +97,7 @@ Perbaikan yang sekarang diterapkan installer:
 
 - systemd unit menjalankan `raspi-gpio set <pin> op dl` sebelum `ExecStart`
   dan setelah service berhenti
-- boot firmware diberi default `gpio=<pin>=op,dl`
+- boot firmware diberi default `gpio=<pin>=ip,pd` + `gpio=<pin>=op,dl`
 - hook `system-shutdown` menjalankan `raspi-gpio set <pin> op dl` pada tahap
   shutdown/reboot paling akhir
 
@@ -119,6 +120,10 @@ sudo reboot
 Jika masih ada bunyi sangat singkat ("chirp") saat power rail turun, itu biasanya
 sudah efek hardware transisi tegangan. Solusi paling efektif: pasang resistor
 pulldown eksternal 10k dari pin sinyal buzzer ke GND.
+
+Untuk kasus cold boot (adapter sempat dicabut total), bunyi sesaat sangat singkat
+juga bisa terjadi sebelum firmware selesai mengambil alih GPIO. Ini limit software
+di fase power-on paling awal; pulldown eksternal tetap solusi paling efektif.
 
 ### Troubleshooting Saat Reboot Tidak Auto-Buka Browser
 
