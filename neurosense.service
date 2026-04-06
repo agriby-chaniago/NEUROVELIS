@@ -13,12 +13,12 @@ WorkingDirectory=/home/pi/neurosense
 # Activate virtual environment first, then run app with that python.
 # NOTE: update path to your actual activate script.
 # Force buzzer pin LOW as early as possible to avoid unwanted tone at boot.
-ExecStartPre=-/usr/bin/raspi-gpio set 5 op dl
+ExecStartPre=-/bin/sh -lc '/usr/bin/raspi-gpio set 5 ip pd >/dev/null 2>&1 || true; /usr/bin/raspi-gpio set 5 op dl >/dev/null 2>&1 || true'
 ExecStart=/bin/bash -lc 'source /home/pi/neurosense/.venv/bin/activate && exec python /home/pi/neurosense/main.py'
 Restart=on-failure
 RestartSec=5s
 # Keep buzzer pin LOW when service stops/shuts down.
-ExecStopPost=-/usr/bin/raspi-gpio set 5 op dl
+ExecStopPost=-/bin/sh -lc '/usr/bin/raspi-gpio set 5 op dl >/dev/null 2>&1 || true; /usr/bin/raspi-gpio set 5 ip pd >/dev/null 2>&1 || true'
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=neurosense

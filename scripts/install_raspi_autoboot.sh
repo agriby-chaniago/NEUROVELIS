@@ -113,6 +113,9 @@ install_shutdown_buzzer_hook() {
 # NEUROSENSE: force buzzer GPIO LOW at very late shutdown/reboot stage.
 PIN="$pin"
 if [ -x /usr/bin/raspi-gpio ]; then
+  # Repeat sequence to reduce audible chirp during rail transition.
+  /usr/bin/raspi-gpio set "\$PIN" op dl >/dev/null 2>&1 || true
+  /usr/bin/raspi-gpio set "\$PIN" ip pd >/dev/null 2>&1 || true
   /usr/bin/raspi-gpio set "\$PIN" op dl >/dev/null 2>&1 || true
 fi
 exit 0
@@ -185,12 +188,12 @@ SupplementaryGroups=video render
 PermissionsStartOnly=true
 WorkingDirectory=$PROJECT_DIR
 # Force buzzer pin LOW as early as possible to avoid unwanted tone at boot.
-ExecStartPre=-/usr/bin/raspi-gpio set $BUZZER_GPIO_PIN op dl
+ExecStartPre=-/bin/sh -lc '/usr/bin/raspi-gpio set $BUZZER_GPIO_PIN ip pd >/dev/null 2>&1 || true; /usr/bin/raspi-gpio set $BUZZER_GPIO_PIN op dl >/dev/null 2>&1 || true'
 ExecStart=/bin/bash -lc 'source "$VENV_ACTIVATE" && exec python "$MAIN_PY"'
 Restart=on-failure
 RestartSec=5s
 # Keep buzzer pin LOW when service stops/shuts down.
-ExecStopPost=-/usr/bin/raspi-gpio set $BUZZER_GPIO_PIN op dl
+ExecStopPost=-/bin/sh -lc '/usr/bin/raspi-gpio set $BUZZER_GPIO_PIN op dl >/dev/null 2>&1 || true; /usr/bin/raspi-gpio set $BUZZER_GPIO_PIN ip pd >/dev/null 2>&1 || true'
 Environment=PYTHONUNBUFFERED=1
 Environment=TZ=Asia/Jakarta
 StandardOutput=journal

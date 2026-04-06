@@ -100,6 +100,9 @@ Perbaikan yang sekarang diterapkan installer:
 - hook `system-shutdown` menjalankan `raspi-gpio set <pin> op dl` pada tahap
   shutdown/reboot paling akhir
 
+Versi terbaru juga menambahkan urutan `ip,pd` + `op,dl` agar pin tidak sempat
+floating saat transisi stop/reboot.
+
 Verifikasi cepat:
 
 ```bash
@@ -112,6 +115,10 @@ Jika line firmware baru ditambahkan, lakukan reboot sekali:
 ```bash
 sudo reboot
 ```
+
+Jika masih ada bunyi sangat singkat ("chirp") saat power rail turun, itu biasanya
+sudah efek hardware transisi tegangan. Solusi paling efektif: pasang resistor
+pulldown eksternal 10k dari pin sinyal buzzer ke GND.
 
 ### Troubleshooting Saat Reboot Tidak Auto-Buka Browser
 
