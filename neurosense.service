@@ -1,19 +1,24 @@
 [Unit]
 Description=NEUROSENSE Sensor Data Collection & Dashboard
-After=network-online.target systemd-udev-settle.service
-Wants=network-online.target systemd-udev-settle.service
+After=local-fs.target systemd-udev-settle.service
+Wants=systemd-udev-settle.service
 
 [Service]
 Type=simple
 User=pi
 Group=pi
 SupplementaryGroups=video render
+PermissionsStartOnly=true
 WorkingDirectory=/home/pi/neurosense
 # Activate virtual environment first, then run app with that python.
 # NOTE: update path to your actual activate script.
+# Force buzzer pin LOW as early as possible to avoid unwanted tone at boot.
+ExecStartPre=-/usr/bin/raspi-gpio set 5 op dl
 ExecStart=/bin/bash -lc 'source /home/pi/neurosense/.venv/bin/activate && exec python /home/pi/neurosense/main.py'
 Restart=on-failure
 RestartSec=5s
+# Keep buzzer pin LOW when service stops/shuts down.
+ExecStopPost=-/usr/bin/raspi-gpio set 5 op dl
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=neurosense

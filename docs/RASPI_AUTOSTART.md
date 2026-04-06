@@ -46,6 +46,8 @@ Script ini otomatis:
 
 - membuat `/etc/systemd/system/neurosense.service`
 - `enable` + `start` service
+- memaksa pin buzzer (GPIO D5) tetap LOW saat boot/shutdown service
+- menulis default firmware GPIO `gpio=5=op,dl` di boot config Raspberry Pi
 - menambahkan autostart Chromium kiosk untuk `/model`
   pada `~/.config/lxsession/LXDE-pi/autostart` (legacy)
   dan `~/.config/autostart/neurosense-kiosk.desktop` (XDG desktop autostart)
@@ -76,6 +78,36 @@ Saat boot sukses:
   agar popup unlock keyring tidak muncul.
 - Jika tetap diminta password saat startup, biasanya desktop belum auto-login
   atau keyring Chromium masih terkunci dari konfigurasi lama.
+
+### Troubleshooting Buzzer Bunyi Terus Saat Pi Boot / Shutdown
+
+Gejala umum:
+
+- buzzer bunyi saat Raspberry Pi belum selesai boot
+- buzzer tetap bunyi sampai `neurosense.service` aktif
+- saat shutdown/halt, buzzer bisa bunyi terus
+
+Penyebab paling umum: pin buzzer mengambang (floating) sebelum service Python
+sempat mengatur GPIO ke LOW.
+
+Perbaikan yang sekarang diterapkan installer:
+
+- systemd unit menjalankan `raspi-gpio set <pin> op dl` sebelum `ExecStart`
+  dan setelah service berhenti
+- boot firmware diberi default `gpio=<pin>=op,dl`
+
+Verifikasi cepat:
+
+```bash
+sudo systemctl cat neurosense.service
+grep -n "gpio=.*op,dl" /boot/firmware/config.txt /boot/config.txt 2>/dev/null
+```
+
+Jika line firmware baru ditambahkan, lakukan reboot sekali:
+
+```bash
+sudo reboot
+```
 
 ### Troubleshooting Saat Reboot Tidak Auto-Buka Browser
 
