@@ -27,6 +27,12 @@
   };
 
   const STABILIZATION_REASON_TOKEN = "stabilizing";
+  const STABILIZATION_MESSAGE =
+    "Keep the sensor stable and face the camera until status is Running.";
+  const WAIT_SENSOR_MESSAGE =
+    "Place your finger on the sensor so warmup can start.";
+  const WARMUP_MESSAGE =
+    "Model warmup is running. Stay still and face the camera.";
 
   function setTextIfChanged(el, nextText, key) {
     if (!el) return;
@@ -134,15 +140,46 @@
   function stateText(state) {
     switch (state) {
       case "RUNNING":
-        return "running";
+        return "Running";
       case "WARMUP":
-        return "class_warmup";
+        return "Class Warmup";
       case "WAITING_SENSOR":
-        return "wait_sensor";
+        return "Wait Sensor";
       case "INIT":
-        return "init";
+        return "Init";
       default:
-        return "degraded";
+        return "Degraded";
+    }
+  }
+
+  function toTitleWords(token) {
+    return String(token || "")
+      .split("_")
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+  }
+
+  function reasonMessageFromToken(token) {
+    switch (token) {
+      case "class_warmup":
+        return WARMUP_MESSAGE;
+      case "wait_sensor":
+        return WAIT_SENSOR_MESSAGE;
+      case "stabilizing":
+        return STABILIZATION_MESSAGE;
+      case "running":
+        return "Model is running normally.";
+      case "inference_timeout":
+        return "Inference exceeded the time limit. Keep the sensor stable and face the camera.";
+      case "inference_error":
+        return "Inference error detected. Please stabilize the sensor and face position.";
+      case "service_init":
+        return "Model service is initializing.";
+      case "unknown":
+        return "Waiting for stable model data.";
+      default:
+        return toTitleWords(token) || "Waiting for stable model data.";
     }
   }
 
@@ -198,11 +235,7 @@
       formatCountdown(elapsed),
       "bannerCountdownText",
     );
-    setTextIfChanged(
-      bannerReason,
-      STABILIZATION_REASON_TOKEN,
-      "bannerReasonText",
-    );
+    setTextIfChanged(bannerReason, STABILIZATION_MESSAGE, "bannerReasonText");
   }
 
   function syncStabilizationTicker(active) {
@@ -309,8 +342,16 @@
         : stabilizationActive
           ? STABILIZATION_REASON_TOKEN
           : warm.runtimeReasonToken;
+    const bannerReasonMessage = warm.warmupActive
+      ? WARMUP_MESSAGE
+      : warm.runtimeState === "WAITING_SENSOR"
+        ? WAIT_SENSOR_MESSAGE
+        : stabilizationActive
+          ? STABILIZATION_MESSAGE
+          : reasonMessageFromToken(warm.runtimeReasonToken);
 
     warm.reasonToken = bannerReasonToken;
+    warm.reasonMessage = bannerReasonMessage;
 
     setVisibleIfChanged(banner, shouldShowBanner, "bannerVisible");
     setStateClassIfChanged(banner, bannerStateClass, "bannerClass");
@@ -322,7 +363,7 @@
     );
 
     if (bannerReason) {
-      setTextIfChanged(bannerReason, bannerReasonToken, "bannerReasonText");
+      setTextIfChanged(bannerReason, bannerReasonMessage, "bannerReasonText");
     }
 
     const pill = document.getElementById(opts.pillId || "runtime-state-pill");
@@ -349,7 +390,11 @@
       String(Math.max(1, Math.ceil(warm.remaining))),
       "overlayNumberText",
     );
-    setTextIfChanged(overlayLabel, "class_warmup", "overlayLabelText");
+    setTextIfChanged(
+      overlayLabel,
+      "Model warmup in progress",
+      "overlayLabelText",
+    );
 
     syncWarmupTicker(warm, showOverlay, overlayMinSeconds);
     if (warm.warmupActive) {

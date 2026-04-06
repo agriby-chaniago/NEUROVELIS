@@ -557,17 +557,39 @@ function toMs(value) {
 
 function toReasonToken(reason) {
   const raw = String(reason || "").trim();
-  if (!raw) return "unknown";
+  if (!raw) return "UNKNOWN";
   const primary = raw.split(":", 1)[0];
   const token = primary
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "")
     .replace(/_+/g, "_");
-  if (!token) return "unknown";
-  if (token === "sensor_not_touched") return "wait_sensor";
-  if (token === "live") return "running";
-  return token;
+  if (!token) return "UNKNOWN";
+  if (token === "sensor_not_touched") return "WAIT_SENSOR";
+  if (token === "live") return "RUNNING";
+  return token.toUpperCase();
+}
+
+function toReasonMessage(reason) {
+  const code = toReasonToken(reason);
+  switch (code) {
+    case "WAIT_SENSOR":
+      return "Wait Sensor - place your finger on the sensor.";
+    case "CLASS_WARMUP":
+      return "Model warmup is running. Stay still and face the camera.";
+    case "STABILIZING":
+      return "Stabilizing - keep the sensor stable and face the camera.";
+    case "INFERENCE_TIMEOUT":
+      return "Inference timeout - stabilize the sensor and face position.";
+    case "INFERENCE_ERROR":
+      return "Inference error - check the sensor and face position.";
+    case "SERVICE_INIT":
+      return "Model service is initializing.";
+    case "RUNNING":
+      return "Model is running normally.";
+    default:
+      return "Waiting for stable model data.";
+  }
 }
 
 function formatLabel(label) {
@@ -696,9 +718,12 @@ function updateCards(data, warm) {
     latencyCard.title = tips.length ? tips.join(" | ") : "Latency unavailable";
   }
 
-  const reasonToken =
+  const reasonToken = toReasonToken(
     warm?.reasonToken ||
-    toReasonToken(data.model_runtime_reason || data.model_alert_reasons || "");
+      data.model_runtime_reason ||
+      data.model_alert_reasons ||
+      "",
+  );
   setText("val-reason", reasonToken);
 }
 
@@ -811,21 +836,21 @@ function connect() {
       if (warm && warm.warmupActive) {
         if (statusDot) statusDot.className = "warmup";
         if (lastUpdate)
-          lastUpdate.textContent = `class_warmup ${Number(warm.remaining || 0).toFixed(1)}s`;
+          lastUpdate.textContent = `Warmup in progress - ${Number(warm.remaining || 0).toFixed(1)}s`;
       } else if (warm && warm.stabilizeActive) {
         if (statusDot) statusDot.className = "warmup";
         if (lastUpdate)
-          lastUpdate.textContent = `stabilizing ${Number(warm.stabilizeElapsed || 0).toFixed(1)}s`;
+          lastUpdate.textContent = `Stabilizing signal - ${Number(warm.stabilizeElapsed || 0).toFixed(1)}s`;
       } else if (warm && warm.runtimeState === "WAITING_SENSOR") {
         if (statusDot) statusDot.className = "warmup";
-        if (lastUpdate) lastUpdate.textContent = "wait_sensor";
+        if (lastUpdate) lastUpdate.textContent = "Wait Sensor";
       } else if (warm && warm.runtimeState === "RUNNING") {
         if (statusDot) statusDot.className = "live";
         if (lastUpdate) lastUpdate.textContent = `Last update: ${now}`;
       } else {
         if (statusDot) statusDot.className = "error";
         if (lastUpdate) {
-          lastUpdate.textContent = toReasonToken(
+          lastUpdate.textContent = toReasonMessage(
             warm?.runtimeReason || data.model_runtime_reason || "degraded",
           );
         }
