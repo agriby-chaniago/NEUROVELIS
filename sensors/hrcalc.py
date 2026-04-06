@@ -5,6 +5,7 @@ Port of Maxim Integrated's reference algorithm (originally in C/Arduino).
 
 import numpy as np
 import logging
+import config
 
 _log = logging.getLogger(__name__)
 
@@ -69,10 +70,13 @@ def calc_hr_and_spo2(
     ir_mean  = np.mean(ir)
     red_mean = np.mean(red)
 
-    if ir_mean < 5000:
+    min_ir_signal = float(getattr(config, "MAX30102_MIN_IR_SIGNAL", 5000))
+    if ir_mean < min_ir_signal:
         # No finger on sensor (or finger not properly placed)
         _log.warning(
-            "MAX30102: no finger / weak signal (ir_mean=%.0f, need >5000)", ir_mean
+            "MAX30102: no finger / weak signal (ir_mean=%.0f, need >%.0f)",
+            ir_mean,
+            min_ir_signal,
         )
         return -999.0, False, -999.0, False, 0.0
 

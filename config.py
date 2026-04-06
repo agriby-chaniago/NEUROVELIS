@@ -33,6 +33,21 @@ MAX30102_SAMPLING_RATE_HZ = 100  # REG_SPO2_CONFIG=0x27 bits[4:2]=001 → SR=100
 # On fresh finger placement, fast-fill kicks in to reach this within one step.
 MAX30102_MIN_SAMPLES = 50
 
+# LED pulse amplitude (PA) registers for MAX30102.
+# Formula: current_mA ~= value * 0.2. Valid range 0x00..0x7F.
+# Higher values raise IR signal but can saturate if finger pressure is very strong.
+MAX30102_LED_RED_PA = 0x50   # 16.0 mA
+MAX30102_LED_IR_PA = 0x60    # 19.2 mA
+MAX30102_LED_PA_MAX = 0x7F   # 25.4 mA hardware max
+
+# Weak-signal policy for auto gain.
+# If IR mean stays below threshold for several consecutive buffers,
+# increase LED PA by MAX30102_LED_GAIN_STEP up to MAX30102_LED_PA_MAX.
+MAX30102_MIN_IR_SIGNAL = 5000
+MAX30102_AUTO_LED_GAIN = True
+MAX30102_LED_GAIN_STEP = 0x08
+MAX30102_WEAK_SIGNAL_STREAK_FOR_GAIN = 3
+
 # ─── Grove GSR Sensor ─────────────────────────────────────────────────────
 # Wiring: Plug Grove cable into A0 port on Grove Base HAT
 # Grove Base HAT ADC (STM32 v1.1) I2C address: 0x04

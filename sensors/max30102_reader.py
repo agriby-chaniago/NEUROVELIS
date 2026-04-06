@@ -64,6 +64,8 @@ class MAX30102Reader(BaseSensor):
         # Auto-recovery throttle for I2C-level failures.
         self._last_recover_attempt_mono: float = 0.0
         self._RECOVER_RETRY_S = 5.0
+        # Weak-signal streak for runtime LED auto-gain.
+        self._weak_signal_streak: int = 0
 
     def calibrate(self) -> None:
         """Initialise the MAX30102 and verify it responds with the correct PART_ID."""
@@ -78,6 +80,7 @@ class MAX30102Reader(BaseSensor):
             self._prev_hr_bpm = None
             self._spo2_guard_count = 0
             self._prev_ir_mean = None
+            self._weak_signal_streak = 0
             self._ring_ir.clear()
             self._ring_red.clear()
             part_id = self._sensor.get_part_id()
@@ -89,6 +92,14 @@ class MAX30102Reader(BaseSensor):
                 )
             else:
                 logger.info("MAX30102 detected OK (PART_ID=0x15)")
+            red_pa, ir_pa = self._sensor.get_led_pulse_amplitudes()
+            logger.info(
+                "MAX30102 LED amplitude: RED=0x%02X (%.1fmA), IR=0x%02X (%.1fmA)",
+                red_pa,
+                red_pa * 0.2,
+                ir_pa,
+                ir_pa * 0.2,
+            )
             self._last_error = None
             self._last_recover_attempt_mono = time.monotonic()
         except Exception as exc:
@@ -222,6 +233,42 @@ class MAX30102Reader(BaseSensor):
                 "MAX30102 buffer: ir_mean=%.0f  red_mean=%.0f  samples=%d",
                 ir_mean_now, float(_np.mean(red_data)), len(ir_data),
             )
+
+            min_ir_signal = float(getattr(config, "MAX30102_MIN_IR_SIGNAL", 5000))
+            if ir_mean_now < min_ir_signal:
+                self._weak_signal_streak += 1
+                gain_streak = max(
+                    1,
+                    int(getattr(config, "MAX30102_WEAK_SIGNAL_STREAK_FOR_GAIN", 3)),
+                )
+                auto_gain_enabled = bool(getattr(config, "MAX30102_AUTO_LED_GAIN", True))
+                if auto_gain_enabled and self._weak_signal_streak >= gain_streak and self._sensor is not None:
+                    step = max(1, int(getattr(config, "MAX30102_LED_GAIN_STEP", 0x08)))
+                    max_pa = int(getattr(config, "MAX30102_LED_PA_MAX", 0x7F))
+                    red_pa, ir_pa, changed = self._sensor.increase_led_current(
+                        step=step,
+                        max_pa=max_pa,
+                    )
+                    if changed:
+                        logger.warning(
+                            "MAX30102 weak IR signal (ir_mean=%.0f < %.0f) -> boosting LED current to RED=0x%02X (%.1fmA), IR=0x%02X (%.1fmA)",
+                            ir_mean_now,
+                            min_ir_signal,
+                            red_pa,
+                            red_pa * 0.2,
+                            ir_pa,
+                            ir_pa * 0.2,
+                        )
+                    self._weak_signal_streak = 0
+            else:
+                if self._weak_signal_streak:
+                    logger.info(
+                        "MAX30102 IR signal recovered (ir_mean=%.0f >= %.0f)",
+                        ir_mean_now,
+                        min_ir_signal,
+                    )
+                self._weak_signal_streak = 0
+
             hr, hr_valid, spo2, spo2_valid, hr_corr = calc_hr_and_spo2(
                 ir_data, red_data,
                 sampling_freq=config.MAX30102_SAMPLING_RATE_HZ // 4,  # SMP_AVE=4
@@ -232,8 +279,8 @@ class MAX30102Reader(BaseSensor):
             # IMPORTANT: calc_hr_and_spo2 returns (-999, False) for BOTH "no finger" AND
             # "motion artifact".  We must NOT clear the ring buffer on motion artifact —
             # only when the IR mean actually drops (finger truly lifted).
-            # Use ir_mean_now < 5000 as the authoritative "finger absent" test.
-            finger_removed = (hr == -999.0 and not hr_valid and ir_mean_now < 5_000)
+            # Use ir_mean_now < MAX30102_MIN_IR_SIGNAL as the authoritative "finger absent" test.
+            finger_removed = (hr == -999.0 and not hr_valid and ir_mean_now < min_ir_signal)
             if finger_removed:
                 self._ema_hr   = None
                 self._ema_spo2 = None
@@ -241,6 +288,7 @@ class MAX30102Reader(BaseSensor):
                 self._prev_hr_bpm = None
                 self._spo2_guard_count = 0
                 self._prev_ir_mean = None
+                self._weak_signal_streak = 0
                 self._ring_ir.clear()    # flush stale low-IR samples
                 self._ring_red.clear()
             else:

@@ -198,14 +198,16 @@ class Buzzer:
                 and not sensor_error_active
             )
 
-            if can_beep_spo2 and self._record_hit("SPO2", min_hits=spo2_min_hits):
-                self._maybe_beep(
-                    "SPO2",
-                    durations=[config.BUZZER_SHORT_BEEP_S] * 3,
-                    gap=0.1,
-                )
+            if can_beep_spo2:
+                if self._record_hit("SPO2", min_hits=spo2_min_hits):
+                    self._maybe_beep(
+                        "SPO2",
+                        durations=[config.BUZZER_SHORT_BEEP_S] * 3,
+                        gap=0.1,
+                    )
             else:
-                # Keep SpO2 alert reason visible but suppress stale/noisy beep streak.
+                # If gating conditions are not met (e.g. invalid HR or active sensor_error),
+                # reset the streak so old hits cannot trigger a delayed beep later.
                 self._clear_hit("SPO2")
         else:
             self._clear_hit("SPO2")
@@ -284,9 +286,12 @@ class Buzzer:
                     should_beep = self._record_hit("SENSOR_ERROR")
 
                 if should_beep:
+                    sensor_error_key = (
+                        f"SENSOR_ERROR:{sensor_error_text}" if change_only else "SENSOR_ERROR"
+                    )
                     # 1 long + 1 short: clearly distinguishable from other patterns
                     self._maybe_beep(
-                        "SENSOR_ERROR",
+                        sensor_error_key,
                         durations=[config.BUZZER_LONG_BEEP_S, config.BUZZER_SHORT_BEEP_S],
                         gap=0.15,
                     )

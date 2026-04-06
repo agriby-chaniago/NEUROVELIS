@@ -6,6 +6,7 @@ Uses smbus2 (I2C) and polling mode — no GPIO INT pin required (Pi 5 safe).
 
 import time
 import smbus2
+import config
 
 # ─── Register Map (Maxim datasheet Table 1) ──────────────────────────────────
 REG_INTR_STATUS_1   = 0x00
@@ -56,6 +57,8 @@ class MAX30102:
     def __init__(self, i2c_bus: int = 1, address: int = 0x57):
         self._bus = smbus2.SMBus(i2c_bus)
         self._addr = address
+        self._red_led_pa = max(0x00, min(0x7F, int(getattr(config, "MAX30102_LED_RED_PA", 0x24))))
+        self._ir_led_pa = max(0x00, min(0x7F, int(getattr(config, "MAX30102_LED_IR_PA", 0x24))))
         self._reset()
         self._setup()
 
@@ -85,12 +88,38 @@ class MAX30102:
         self._write(REG_MODE_CONFIG, 0x03)    # SPO2 mode
         self._write(REG_SPO2_CONFIG, 0x27)    # ADC_RGE=4096nA, SR=400Hz, LED_PW=411µs (18-bit)
 
-        # LED pulse amplitudes — 0x24 = 36 × 0.2mA = 7.2mA each.
-        # At 18-bit ADC full-scale (262143) with 25mA the signal saturates.
-        # 7.2mA gives ir_mean ~50k–120k with finger properly placed (ideal range).
-        self._write(REG_LED1_PA, 0x24)        # Red  ~7.2 mA
-        self._write(REG_LED2_PA, 0x24)        # IR   ~7.2 mA
+        # LED pulse amplitudes are configurable from config.py.
+        self._write(REG_LED1_PA, self._red_led_pa)   # Red LED current
+        self._write(REG_LED2_PA, self._ir_led_pa)    # IR LED current
         self._write(REG_PILOT_PA, 0x7F)
+
+    def get_led_pulse_amplitudes(self) -> tuple[int, int]:
+        """Return current (red_pa, ir_pa) register values (0x00..0x7F)."""
+        return self._red_led_pa, self._ir_led_pa
+
+    def increase_led_current(self, step: int = 0x08, max_pa: int = 0x7F) -> tuple[int, int, bool]:
+        """
+        Increase both RED and IR LED amplitudes by `step` up to `max_pa`.
+
+        Returns
+        -------
+        tuple[int, int, bool]
+            (new_red_pa, new_ir_pa, changed)
+        """
+        step_i = max(1, int(step))
+        max_i = max(0x00, min(0x7F, int(max_pa)))
+
+        new_red = min(max_i, self._red_led_pa + step_i)
+        new_ir = min(max_i, self._ir_led_pa + step_i)
+        changed = (new_red != self._red_led_pa) or (new_ir != self._ir_led_pa)
+
+        if changed:
+            self._red_led_pa = new_red
+            self._ir_led_pa = new_ir
+            self._write(REG_LED1_PA, self._red_led_pa)
+            self._write(REG_LED2_PA, self._ir_led_pa)
+
+        return self._red_led_pa, self._ir_led_pa, changed
 
     # ── I2C primitives ───────────────────────────────────────────────────
 
