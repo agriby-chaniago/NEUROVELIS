@@ -252,7 +252,8 @@ class CameraReader:
         # dim conditions — acceptable for temporal micro-expression datasets.
         # Force the sensor into a matching raw readout mode.
         # OV64A40 only has one mode near high-fps: 1920x1080 @ 45.65fps max.
-        # FrameDurationLimits locks the ISP to exactly CAMERA_FRAMERATE (45fps).
+        # FrameDurationLimits locks the ISP to exactly CAMERA_FRAMERATE
+        # (currently configured as 30fps in config.py).
         video_cfg = cam.create_video_configuration(
             main={
                 "size":   (config.CAMERA_WIDTH, config.CAMERA_HEIGHT),

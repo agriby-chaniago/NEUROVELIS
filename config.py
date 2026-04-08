@@ -223,7 +223,7 @@ CAMERA_ENABLED       = True
 CAMERA_LIBCAMERA_INDEX = 0
 CAMERA_WIDTH         = 1920  # OV64A40 native mode: 1920x1080 @ max 45.65fps
 CAMERA_HEIGHT        = 1080  # Satu-satunya mode sensor yang mendekati high-fps
-CAMERA_FRAMERATE     = 45    # Hardware max OV64A40 di mode ini: 45.65 fps
+CAMERA_FRAMERATE     = 30    # Lowered for lower end-to-end latency with detailed mesh overlay
 CAMERA_JPEG_QUALITY  = 75     # turun sedikit agar encode tetap <22ms per frame
 CAMERA_ROTATION      = 90     # clockwise degrees: 0 / 90 / 180 / 270
 CAMERA_DEVICE_INDEX  = 0      # OpenCV fallback: index for /dev/video0 = 0

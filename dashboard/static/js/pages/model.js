@@ -9,7 +9,8 @@ const TRAIL_POINTS_DEFAULT = Math.max(
   2,
   Math.round(TRAIL_SECONDS_DEFAULT * STREAM_HZ_APPROX),
 );
-const MESH_DRAW_POINTS = false;
+const MESH_DRAW_POINTS = true;
+const MESH_DRAW_TESSELLATION = true;
 
 const elCache = new Map();
 
@@ -210,6 +211,8 @@ const MESH_STYLE = {
   smoothingAlpha: 0.72,
   boxColorRGBA: "rgba(255, 48, 48, 0.95)",
   boxWidth: 2.2,
+  tesselationColorRGBA: "rgba(87, 255, 87, 0.38)",
+  tesselationWidth: 0.8,
   contourColorRGBA: "rgba(87, 255, 87, 0.96)",
   contourWidth: 1.4,
   pointColorRGBA: "rgba(255, 48, 48, 0.88)",
@@ -369,6 +372,34 @@ function drawContourPath(projected, indices) {
   }
 }
 
+function drawTesselation(projected) {
+  if (!meshCtx || !Array.isArray(meshEdges) || meshEdges.length === 0) return;
+
+  // Guardrail keeps UI responsive by reducing edge density under heavy frame cost.
+  const step = guardrailLevel >= 2 ? 3 : guardrailLevel === 1 ? 2 : 1;
+  let hasSegments = false;
+
+  meshCtx.strokeStyle = MESH_STYLE.tesselationColorRGBA;
+  meshCtx.lineWidth = MESH_STYLE.tesselationWidth;
+  meshCtx.beginPath();
+
+  for (let i = 0; i < meshEdges.length; i += step) {
+    const edge = meshEdges[i];
+    if (!Array.isArray(edge) || edge.length < 2) continue;
+    const p1 = projected[edge[0]];
+    const p2 = projected[edge[1]];
+    if (!p1 || !p2) continue;
+
+    meshCtx.moveTo(p1[0], p1[1]);
+    meshCtx.lineTo(p2[0], p2[1]);
+    hasSegments = true;
+  }
+
+  if (hasSegments) {
+    meshCtx.stroke();
+  }
+}
+
 function drawRotatedBoundingBox(projected) {
   if (!meshCtx) return;
   const left = projected[234];
@@ -432,6 +463,9 @@ function drawFaceMesh(landmarks) {
   if (!Array.isArray(landmarks) || landmarks.length === 0) return;
 
   const projected = smoothProjected(projectLandmarks(landmarks));
+  if (MESH_DRAW_TESSELLATION) {
+    drawTesselation(projected);
+  }
   drawRotatedBoundingBox(projected);
 
   meshCtx.strokeStyle = MESH_STYLE.contourColorRGBA;
