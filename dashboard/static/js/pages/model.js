@@ -9,6 +9,7 @@ const TRAIL_POINTS_DEFAULT = Math.max(
   2,
   Math.round(TRAIL_SECONDS_DEFAULT * STREAM_HZ_APPROX),
 );
+const MESH_DRAW_POINTS = false;
 
 const elCache = new Map();
 
@@ -196,7 +197,9 @@ const lastUpdate = document.getElementById("last-update");
 const footerTs = document.getElementById("footer-ts");
 const cameraFeed = document.getElementById("camera-feed");
 const meshCanvas = document.getElementById("face-mesh-overlay");
-const meshCtx = meshCanvas ? meshCanvas.getContext("2d") : null;
+const meshCtx = meshCanvas
+  ? meshCanvas.getContext("2d", { alpha: true, desynchronized: true })
+  : null;
 const sseClient = window.NeurovelisSSEClient || null;
 const chartUtils = window.NeurovelisChartUtils || null;
 let modelStream = null;
@@ -243,6 +246,8 @@ let previousProjected = null;
 let meshDisplayWidth = 0;
 let meshDisplayHeight = 0;
 let meshNeedsResizeSync = true;
+let pendingMeshLandmarks = null;
+let meshFlushRafId = null;
 
 function syncMeshCanvasSize() {
   if (!meshCanvas || !cameraFeed) return;
@@ -445,7 +450,37 @@ function drawFaceMesh(landmarks) {
   drawContourPath(projected, NOSE_BRIDGE);
   drawContourPath(projected, NOSE_BASE);
 
-  drawMeshPoints(projected);
+  if (MESH_DRAW_POINTS) {
+    drawMeshPoints(projected);
+  }
+}
+
+function flushMeshFrame() {
+  meshFlushRafId = null;
+  if (pendingMeshLandmarks === null) return;
+
+  const landmarks = pendingMeshLandmarks;
+  pendingMeshLandmarks = null;
+  drawFaceMesh(landmarks);
+
+  if (pendingMeshLandmarks !== null) {
+    meshFlushRafId = window.requestAnimationFrame(flushMeshFrame);
+  }
+}
+
+function queueMeshFrame(landmarks) {
+  pendingMeshLandmarks = Array.isArray(landmarks) ? landmarks : [];
+  if (meshFlushRafId === null) {
+    meshFlushRafId = window.requestAnimationFrame(flushMeshFrame);
+  }
+}
+
+function cancelMeshFrameQueue() {
+  pendingMeshLandmarks = null;
+  if (meshFlushRafId !== null) {
+    window.cancelAnimationFrame(meshFlushRafId);
+    meshFlushRafId = null;
+  }
 }
 
 async function loadMeshTopology() {
@@ -881,9 +916,10 @@ function connectMeshStream() {
     pauseWhenHidden: true,
     parseJson: true,
     onJson: (data) => {
-      drawFaceMesh(data.model_face_landmarks);
+      queueMeshFrame(data.model_face_landmarks);
     },
     onError: () => {
+      cancelMeshFrameQueue();
       clearMeshOverlay();
     },
   });
@@ -933,6 +969,7 @@ function onCameraError() {
     camStatus.textContent = "Camera unavailable - retrying...";
     camStatus.className = "error";
   }
+  cancelMeshFrameQueue();
   clearMeshOverlay();
   const feed = byId("camera-feed");
   if (feed) feed.style.display = "none";
@@ -961,6 +998,7 @@ document.addEventListener("visibilitychange", () => {
 window.addEventListener("beforeunload", () => {
   if (modelStream) modelStream.close();
   if (meshStream) meshStream.close();
+  cancelMeshFrameQueue();
   if (chartRafId !== null) {
     window.cancelAnimationFrame(chartRafId);
     chartRafId = null;

@@ -380,4 +380,4 @@ MODEL_EDA_SCR_DIFF_THRESHOLD_US = 0.03
 
 # Mesh overlay stream interval for /model/mesh_stream (seconds).
 # Keep this separate from dashboard SSE interval to avoid camera lag.
-MODEL_MESH_STREAM_INTERVAL_S = 0.08
+MODEL_MESH_STREAM_INTERVAL_S = 0.10
