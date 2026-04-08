@@ -663,7 +663,9 @@ function toReasonMessage(reason) {
 
 function formatLabel(label) {
   if (!label) return "UNKNOWN";
-  return String(label).toUpperCase();
+  const normalized = String(label).toLowerCase();
+  if (normalized === "normal") return "LOW RISK";
+  return normalized.toUpperCase();
 }
 
 function getTopChance(data) {
@@ -678,11 +680,18 @@ function getTopChance(data) {
   };
 
   const rawLabel = String(data.model_label_raw_top1 || "").toLowerCase();
+  const label = String(data.model_label_top1 || "").toLowerCase();
+
+  // When backend top class is normal, card confidence should use
+  // model_confidence_top1 (handled via fallback in updateCards).
+  if (rawLabel === "normal" || label === "normal") {
+    return null;
+  }
+
   if (CLASS_ORDER.includes(rawLabel) && Number.isFinite(chances[rawLabel])) {
     return chances[rawLabel];
   }
 
-  const label = String(data.model_label_top1 || "").toLowerCase();
   if (CLASS_ORDER.includes(label) && Number.isFinite(chances[label])) {
     return chances[label];
   }

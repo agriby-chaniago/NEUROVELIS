@@ -345,8 +345,9 @@ MODEL_ALERT_CONFIDENCE_THRESHOLD = 0.68
 # EMA smoothing for class probabilities (0<alpha<=1). Lower = smoother.
 MODEL_SMOOTHING_ALPHA = 0.30
 
-# Show prediction distribution on 3 target classes only (exclude normal).
-MODEL_EXCLUDE_NORMAL_CLASS = True
+# Keep normal class in backend probability normalization for calibration,
+# while UI can still focus on non-normal risk classes.
+MODEL_EXCLUDE_NORMAL_CLASS = False
 
 # Expose independent per-class chance from raw model logits (not normalized
 # across classes), so each class can be interpreted on its own 0-100 scale.
