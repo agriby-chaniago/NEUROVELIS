@@ -221,17 +221,17 @@ CAMERA_ENABLED       = True
 # CSI port selection (Raspberry Pi 5 dual-CSI).
 # Set 0 untuk CSI0 (default), 1 untuk CSI1.
 CAMERA_LIBCAMERA_INDEX = 0
-CAMERA_WIDTH         = 1920  # OV64A40 native mode: 1920x1080 @ max 45.65fps
-CAMERA_HEIGHT        = 1080  # Satu-satunya mode sensor yang mendekati high-fps
-CAMERA_FRAMERATE     = 30    # Lowered for lower end-to-end latency with detailed mesh overlay
-CAMERA_JPEG_QUALITY  = 75     # turun sedikit agar encode tetap <22ms per frame
+CAMERA_WIDTH         = 1920  # OV64A40 high-speed mode: 1920x1080 target 60fps
+CAMERA_HEIGHT        = 1080
+CAMERA_FRAMERATE     = 60    # Requires dtoverlay ov64a40 link-frequency=456000000
+CAMERA_JPEG_QUALITY  = 75
 CAMERA_ROTATION      = 90     # clockwise degrees: 0 / 90 / 180 / 270
 CAMERA_DEVICE_INDEX  = 0      # OpenCV fallback: index for /dev/video0 = 0
 
-# Resolusi stream MJPEG (lores) — ISP hardware melakukan downscale, CPU tidak terbebani.
-# Untuk 45fps: 640x360 = encode ~5ms, masih aman di 22ms/frame window.
-CAMERA_STREAM_WIDTH  = 640
-CAMERA_STREAM_HEIGHT = 360
+# Resolusi output stream. Default disamakan dengan mode sensor 1080p.
+# Jika latensi/network berat di deployment, turunkan ke 1280x720 atau 640x360.
+CAMERA_STREAM_WIDTH  = 1920
+CAMERA_STREAM_HEIGHT = 1080
 
 # Sharpness: 1.0 = camera default, 2.0 = sharper (software sharpening via ISP)
 CAMERA_SHARPNESS     = 2.0

@@ -55,6 +55,44 @@ Script ini otomatis:
   pada `~/.config/lxsession/LXDE-pi/autostart` (legacy)
   dan `~/.config/autostart/neurovelis-kiosk.desktop` (XDG desktop autostart)
 
+## Konfigurasi Kamera OwlSight 60fps (Wajib)
+
+Untuk Arducam OV64A40, mode 1920x1080 @ 60fps hanya aktif jika link frequency
+di firmware memakai mode high-speed.
+
+1. Edit boot config:
+
+```bash
+sudo nano /boot/firmware/config.txt
+```
+
+1. Pastikan konfigurasi berikut ada di file:
+
+```ini
+camera_auto_detect=0
+
+[all]
+dtoverlay=ov64a40,link-frequency=456000000
+```
+
+1. Jika kamera dipasang di CAM0 (khusus Pi 5/CM), gunakan:
+
+```ini
+dtoverlay=ov64a40,cam0,link-frequency=456000000
+```
+
+1. Reboot:
+
+```bash
+sudo reboot
+```
+
+1. Verifikasi kamera terdeteksi:
+
+```bash
+rpicam-still --list-cameras
+```
+
 ## Cek Status
 
 ```bash

@@ -43,8 +43,10 @@ def _import_camera_stack():
 Picamera2, cv2 = _import_camera_stack()
 
 
-width = int(getattr(config, "CAMERA_STREAM_WIDTH", 640))
-height = int(getattr(config, "CAMERA_STREAM_HEIGHT", 360))
+capture_width = int(max(1, getattr(config, "CAMERA_WIDTH", 1920)))
+capture_height = int(max(1, getattr(config, "CAMERA_HEIGHT", 1080)))
+stream_width = int(max(1, getattr(config, "CAMERA_STREAM_WIDTH", capture_width)))
+stream_height = int(max(1, getattr(config, "CAMERA_STREAM_HEIGHT", capture_height)))
 fps = int(max(1, getattr(config, "CAMERA_FRAMERATE", 30)))
 frame_us = int(1_000_000 / fps)
 jpeg_quality = int(getattr(config, "CAMERA_JPEG_QUALITY", 80))
@@ -95,7 +97,9 @@ if requested_idx < 0 or requested_idx >= len(available):
 
 picam2 = Picamera2(requested_idx)
 video_config = picam2.create_video_configuration(
-    main={"size": (width, height), "format": "RGB888"},
+    # Sensor mode is locked by main stream resolution.
+    # Keep this at 1920x1080 for OV64A40 high-speed 60fps mode.
+    main={"size": (capture_width, capture_height), "format": "RGB888"},
     controls={
         "FrameDurationLimits": (frame_us, frame_us),
         "AwbEnable": True,
@@ -207,6 +211,16 @@ try:
         # cv2.imencode expects BGR input.
         if not swap_rb:
             frame = frame[:, :, ::-1]
+
+        if (stream_width, stream_height) != (capture_width, capture_height):
+            interpolation = cv2.INTER_AREA
+            if stream_width > capture_width or stream_height > capture_height:
+                interpolation = cv2.INTER_LINEAR
+            frame = cv2.resize(
+                frame,
+                (stream_width, stream_height),
+                interpolation=interpolation,
+            )
 
         if rotation == 90:
             frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
