@@ -300,30 +300,78 @@ class CameraReader:
             logger.warning("CameraReader: FrameDurationLimits post-start failed: %s", fdl_exc)
 
         # ── Autofocus (Arducam 64MP AF / OV64A40) ────────────────────────
+        af_periodic_trigger = False
+        af_trigger_start = 0
+        af_refocus_interval_s = float(
+            getattr(config, "CAMERA_AF_REFOCUS_INTERVAL_S", 2.0)
+        )
+        if af_refocus_interval_s < 0.0:
+            af_refocus_interval_s = 0.0
+        af_next_trigger_t = 0.0
+
         if getattr(config, "CAMERA_AUTOFOCUS", False):
+            control_names = set()
+            try:
+                controls = getattr(cam, "camera_controls", None)
+                if isinstance(controls, dict):
+                    control_names = set(controls.keys())
+            except Exception:
+                pass
+
+            def _set_control_if_supported(key: str, value) -> bool:
+                if control_names and key not in control_names:
+                    return False
+                try:
+                    cam.set_controls({key: value})
+                    return True
+                except Exception:
+                    return False
+
             af_mode_continuous = 2
+            af_mode_auto = 1
             af_speed_normal = 1
-            af_trigger_start = 0
             try:
                 from libcamera import controls as _controls  # type: ignore
                 af_mode_continuous = _controls.AfModeEnum.Continuous
+                af_mode_auto = _controls.AfModeEnum.Auto
                 af_speed_normal = _controls.AfSpeedEnum.Normal
                 af_trigger_start = _controls.AfTriggerEnum.Start
             except Exception:
                 pass
 
             try:
-                # Set AfMode first; optional AF keys are applied best-effort.
-                cam.set_controls({"AfMode": af_mode_continuous})
-                try:
-                    cam.set_controls({"AfSpeed": af_speed_normal})
-                except Exception as af_speed_exc:
-                    logger.debug("CameraReader: AfSpeed not applied: %s", af_speed_exc)
-                try:
-                    cam.set_controls({"AfTrigger": af_trigger_start})
-                except Exception as af_trigger_exc:
-                    logger.debug("CameraReader: AfTrigger not applied: %s", af_trigger_exc)
-                logger.info("CameraReader: continuous autofocus enabled (Arducam 64MP AF)")
+                af_mode_name = None
+                if _set_control_if_supported("AfMode", af_mode_continuous):
+                    af_mode_name = "continuous"
+                elif _set_control_if_supported("AfMode", af_mode_auto):
+                    af_mode_name = "auto"
+
+                if not _set_control_if_supported("AfSpeed", af_speed_normal):
+                    logger.debug("CameraReader: AfSpeed not applied")
+
+                af_trigger_supported = _set_control_if_supported(
+                    "AfTrigger", af_trigger_start
+                )
+
+                if af_mode_name is None:
+                    lens_position = getattr(config, "CAMERA_LENS_POSITION", None)
+                    if lens_position is not None:
+                        if _set_control_if_supported("LensPosition", float(lens_position)):
+                            logger.info(
+                                "CameraReader: manual LensPosition applied (%.2f)",
+                                float(lens_position),
+                            )
+                    logger.warning("CameraReader: AF mode unsupported by camera driver")
+                else:
+                    logger.info("CameraReader: autofocus enabled (%s)", af_mode_name)
+
+                af_periodic_trigger = (
+                    af_mode_name == "auto"
+                    and af_trigger_supported
+                    and af_refocus_interval_s > 0.0
+                )
+                if af_periodic_trigger:
+                    af_next_trigger_t = time.monotonic() + af_refocus_interval_s
             except Exception as af_exc:
                 logger.warning("CameraReader: could not enable AF mode: %s", af_exc)
 
@@ -448,6 +496,15 @@ class CameraReader:
             _fps_t0     = time.monotonic()
 
             while self._running:
+                if af_periodic_trigger and time.monotonic() >= af_next_trigger_t:
+                    try:
+                        cam.set_controls({"AfTrigger": af_trigger_start})
+                    except Exception as af_tick_exc:
+                        af_periodic_trigger = False
+                        logger.debug("CameraReader: periodic AfTrigger failed: %s", af_tick_exc)
+                    else:
+                        af_next_trigger_t = time.monotonic() + af_refocus_interval_s
+
                 raw = cam.capture_array("lores")   # BGR888 from ISP
                 _cap_count += 1
 

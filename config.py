@@ -243,6 +243,15 @@ CAMERA_BRIGHTNESS    = 0.2
 # False untuk fixed-focus (adjust lensa ring secara manual).
 CAMERA_AUTOFOCUS     = True
 
+# Jika driver hanya support mode Auto (tanpa Continuous), worker akan kirim
+# trigger fokus berkala agar fokus tetap adaptif terhadap perubahan jarak.
+# Set 0 untuk menonaktifkan retrigger berkala.
+CAMERA_AF_REFOCUS_INTERVAL_S = 2.0
+
+# Fallback manual untuk modul yang expose LensPosition tapi tidak expose AfMode.
+# None = biarkan kamera/driver mengatur. Isi float (mis. 2.0) untuk lock fokus.
+CAMERA_LENS_POSITION = None
+
 # Mirror horizontal untuk preview/dashboard (selfie view).
 CAMERA_MIRROR_HORIZONTAL = True
 

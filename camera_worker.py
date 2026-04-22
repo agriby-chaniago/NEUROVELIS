@@ -1,4 +1,5 @@
 import sys
+import time
 import traceback
 
 import config
@@ -53,6 +54,31 @@ autofocus = bool(getattr(config, "CAMERA_AUTOFOCUS", False))
 sharpness = float(getattr(config, "CAMERA_SHARPNESS", 1.0))
 brightness = float(getattr(config, "CAMERA_BRIGHTNESS", 0.0))
 mirror_horizontal = bool(getattr(config, "CAMERA_MIRROR_HORIZONTAL", True))
+af_refocus_interval_s = float(getattr(config, "CAMERA_AF_REFOCUS_INTERVAL_S", 2.0))
+if af_refocus_interval_s < 0.0:
+    af_refocus_interval_s = 0.0
+
+
+def _camera_control_names(cam):
+    """Return camera control names if available (best-effort)."""
+    try:
+        controls = getattr(cam, "camera_controls", None)
+        if isinstance(controls, dict):
+            return set(controls.keys())
+    except Exception:
+        pass
+    return set()
+
+
+def _set_control_if_supported(cam, control_names, key, value):
+    """Set one control key if supported; return True when applied."""
+    if control_names and key not in control_names:
+        return False
+    try:
+        cam.set_controls({key: value})
+        return True
+    except Exception:
+        return False
 
 requested_idx = int(getattr(config, "CAMERA_LIBCAMERA_INDEX", 0))
 available = Picamera2.global_camera_info()
@@ -89,34 +115,94 @@ except Exception:
 
 if autofocus:
     try:
-        # Apply AF controls in stages: some libcamera stacks expose AfMode
-        # but not AfSpeed/AfTrigger; a single combined call can fail entirely.
+        # Layered AF strategy:
+        # 1) Prefer continuous AF.
+        # 2) Fallback to auto AF + trigger if continuous mode unsupported.
+        # 3) Periodically retrigger in auto mode to keep focus responsive.
+        control_names = _camera_control_names(picam2)
+        if control_names:
+            af_caps = [
+                key for key in ("AfMode", "AfTrigger", "AfSpeed", "LensPosition")
+                if key in control_names
+            ]
+            sys.stderr.write(
+                f"camera_worker: AF control capability={','.join(af_caps) or 'none'}\n"
+            )
         af_mode_continuous = 2
+        af_mode_auto = 1
         af_speed_normal = 1
         af_trigger_start = 0
         try:
             from libcamera import controls as _controls  # type: ignore
             af_mode_continuous = _controls.AfModeEnum.Continuous
+            af_mode_auto = _controls.AfModeEnum.Auto
             af_speed_normal = _controls.AfSpeedEnum.Normal
             af_trigger_start = _controls.AfTriggerEnum.Start
         except Exception:
             pass
 
-        picam2.set_controls({"AfMode": af_mode_continuous})
-        try:
-            picam2.set_controls({"AfSpeed": af_speed_normal})
-        except Exception:
-            pass
-        try:
-            # Nudge AF state machine after mode switch on drivers that need it.
-            picam2.set_controls({"AfTrigger": af_trigger_start})
-        except Exception:
-            pass
+        af_mode_name = None
+        if _set_control_if_supported(picam2, control_names, "AfMode", af_mode_continuous):
+            af_mode_name = "continuous"
+        elif _set_control_if_supported(picam2, control_names, "AfMode", af_mode_auto):
+            af_mode_name = "auto"
+
+        _set_control_if_supported(picam2, control_names, "AfSpeed", af_speed_normal)
+
+        af_trigger_supported = _set_control_if_supported(
+            picam2, control_names, "AfTrigger", af_trigger_start
+        )
+
+        if af_mode_name is None:
+            # Last-resort fallback for modules exposing only manual lens control.
+            lens_position = getattr(config, "CAMERA_LENS_POSITION", None)
+            if lens_position is not None:
+                manual_ok = _set_control_if_supported(
+                    picam2,
+                    control_names,
+                    "LensPosition",
+                    float(lens_position),
+                )
+                if manual_ok:
+                    sys.stderr.write(
+                        f"camera_worker: manual LensPosition={float(lens_position):.2f}\n"
+                    )
+            else:
+                sys.stderr.write(
+                    "camera_worker: autofocus unavailable (no AfMode support)\n"
+                )
+        else:
+            sys.stderr.write(
+                f"camera_worker: autofocus mode active ({af_mode_name})\n"
+            )
+
+        af_periodic_trigger = (
+            af_mode_name == "auto"
+            and af_trigger_supported
+            and af_refocus_interval_s > 0.0
+        )
+        if af_periodic_trigger:
+            sys.stderr.write(
+                f"camera_worker: periodic AfTrigger every {af_refocus_interval_s:.1f}s\n"
+            )
+        next_af_trigger_t = time.monotonic() + af_refocus_interval_s
     except Exception:
-        pass
+        af_periodic_trigger = False
+        next_af_trigger_t = 0.0
+else:
+    af_periodic_trigger = False
+    next_af_trigger_t = 0.0
 
 try:
     while True:
+        if af_periodic_trigger and time.monotonic() >= next_af_trigger_t:
+            try:
+                picam2.set_controls({"AfTrigger": af_trigger_start})
+            except Exception:
+                af_periodic_trigger = False
+            else:
+                next_af_trigger_t = time.monotonic() + af_refocus_interval_s
+
         frame = picam2.capture_array()
         # cv2.imencode expects BGR input.
         if not swap_rb:
