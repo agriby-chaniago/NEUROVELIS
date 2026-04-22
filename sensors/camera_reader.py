@@ -301,11 +301,31 @@ class CameraReader:
 
         # ── Autofocus (Arducam 64MP AF / OV64A40) ────────────────────────
         if getattr(config, "CAMERA_AUTOFOCUS", False):
+            af_mode_continuous = 2
+            af_speed_normal = 1
+            af_trigger_start = 0
             try:
-                cam.set_controls({"AfMode": 2, "AfSpeed": 1})
+                from libcamera import controls as _controls  # type: ignore
+                af_mode_continuous = _controls.AfModeEnum.Continuous
+                af_speed_normal = _controls.AfSpeedEnum.Normal
+                af_trigger_start = _controls.AfTriggerEnum.Start
+            except Exception:
+                pass
+
+            try:
+                # Set AfMode first; optional AF keys are applied best-effort.
+                cam.set_controls({"AfMode": af_mode_continuous})
+                try:
+                    cam.set_controls({"AfSpeed": af_speed_normal})
+                except Exception as af_speed_exc:
+                    logger.debug("CameraReader: AfSpeed not applied: %s", af_speed_exc)
+                try:
+                    cam.set_controls({"AfTrigger": af_trigger_start})
+                except Exception as af_trigger_exc:
+                    logger.debug("CameraReader: AfTrigger not applied: %s", af_trigger_exc)
                 logger.info("CameraReader: continuous autofocus enabled (Arducam 64MP AF)")
             except Exception as af_exc:
-                logger.warning("CameraReader: could not enable AF: %s", af_exc)
+                logger.warning("CameraReader: could not enable AF mode: %s", af_exc)
 
         # ── Dataset / fixed-exposure mode ─────────────────────────────────
         _fixed_exp  = getattr(config, "CAMERA_FIXED_EXPOSURE_US", 0)

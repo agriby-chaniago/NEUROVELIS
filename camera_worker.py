@@ -89,8 +89,29 @@ except Exception:
 
 if autofocus:
     try:
-        # Arducam 64MP AF: 2 = continuous autofocus, 1 = normal AF speed.
-        picam2.set_controls({"AfMode": 2, "AfSpeed": 1})
+        # Apply AF controls in stages: some libcamera stacks expose AfMode
+        # but not AfSpeed/AfTrigger; a single combined call can fail entirely.
+        af_mode_continuous = 2
+        af_speed_normal = 1
+        af_trigger_start = 0
+        try:
+            from libcamera import controls as _controls  # type: ignore
+            af_mode_continuous = _controls.AfModeEnum.Continuous
+            af_speed_normal = _controls.AfSpeedEnum.Normal
+            af_trigger_start = _controls.AfTriggerEnum.Start
+        except Exception:
+            pass
+
+        picam2.set_controls({"AfMode": af_mode_continuous})
+        try:
+            picam2.set_controls({"AfSpeed": af_speed_normal})
+        except Exception:
+            pass
+        try:
+            # Nudge AF state machine after mode switch on drivers that need it.
+            picam2.set_controls({"AfTrigger": af_trigger_start})
+        except Exception:
+            pass
     except Exception:
         pass
 
