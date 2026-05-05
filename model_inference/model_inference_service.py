@@ -102,6 +102,8 @@ class ModelInferenceService:
             "model_face_backend": self._visual_extractor.health().get("backend"),
             "model_timestamp_utc": None,
         }
+        self._result_seq: int = 0
+        self._result_cond: threading.Condition = threading.Condition()
 
     def start(self):
         if not config.MODEL_INFERENCE_ENABLED:
@@ -316,11 +318,33 @@ class ModelInferenceService:
         timeout_ms = max(1, int(config.MODEL_INFERENCE_TIMEOUT_MS))
         min_points = max(3, int(config.MODEL_INFERENCE_MIN_POINTS))
         next_inference_at = 0.0
+        last_visual_time: float = 0.0
+        last_frame_seq: int = 0
 
         while not self._stop_event.is_set():
             start = time.monotonic()
             sensor_data = self._sensor_manager.get_latest()
-            frame = self._camera_reader.get_frame() if self._camera_reader is not None else None
+
+            # Event-driven frame acquisition: blocks until new frame or timeout.
+            # Replaces fixed-timer polling — inference thread wakes on actual frames.
+            if self._camera_reader is not None:
+                last_frame_seq, frame = self._camera_reader.wait_new_frame(
+                    last_frame_seq, timeout=visual_interval
+                )
+            else:
+                frame = None
+
+            # Soft throttle: cap visual extraction at ~20 Hz regardless of camera FPS.
+            # Without this, event-driven at 60fps → 6x current CPU load.
+            now = time.monotonic()
+            if frame is not None and (now - last_visual_time) < 0.05:
+                continue
+            if frame is not None:
+                last_visual_time = now
+
+            # Cache backend once per iteration — avoids 3 redundant dict allocs.
+            _vfe_backend = self._visual_extractor.health().get("backend")
+
             visual_features = self._visual_extractor.extract(frame)
             face_detected = bool(visual_features.get("face_detected"))
             landmarks_norm = visual_features.get("landmarks_norm")
@@ -332,7 +356,7 @@ class ModelInferenceService:
                 self._mesh_latest = {
                     "model_face_detected": face_detected,
                     "model_face_landmarks": list(landmarks_norm),
-                    "model_face_backend": self._visual_extractor.health().get("backend"),
+                    "model_face_backend": _vfe_backend,
                     "model_timestamp_utc": mesh_timestamp_utc,
                 }
 
@@ -352,7 +376,7 @@ class ModelInferenceService:
                     result = self._annotate_runtime_state(result=result, now=start)
                     result["model_face_detected"] = face_detected
                     result["model_face_landmarks"] = landmarks_norm
-                    result["model_face_backend"] = self._visual_extractor.health().get("backend")
+                    result["model_face_backend"] = _vfe_backend
                     result["model_timestamp_utc"] = datetime.now(timezone.utc).isoformat()
                     result = self._update_stability_tracker(
                         result=result,
@@ -364,6 +388,10 @@ class ModelInferenceService:
                         self._last_feature_vector = None
                         self._last_feature_timestamp_utc = None
                         self._latest = dict(result)
+
+                    with self._result_cond:
+                        self._result_seq += 1
+                        self._result_cond.notify_all()
 
                     publish_result = dict(result)
                     publish_result.pop("model_face_landmarks", None)
@@ -414,7 +442,7 @@ class ModelInferenceService:
                 result = self._apply_class_warmup_gate(result=result, now=start)
                 result["model_face_detected"] = face_detected
                 result["model_face_landmarks"] = landmarks_norm
-                result["model_face_backend"] = self._visual_extractor.health().get("backend")
+                result["model_face_backend"] = _vfe_backend
                 result = self._annotate_runtime_state(result=result, now=start)
 
                 result["model_timestamp_utc"] = datetime.now(timezone.utc).isoformat()
@@ -427,14 +455,21 @@ class ModelInferenceService:
                 with self._lock:
                     self._latest = dict(result)
 
+                with self._result_cond:
+                    self._result_seq += 1
+                    self._result_cond.notify_all()
+
                 # Publish inference into shared sensor snapshot for dashboard/SSE/CSV.
                 publish_result = dict(result)
                 publish_result.pop("model_face_landmarks", None)
                 self._sensor_manager.set_model_inference(publish_result)
                 next_inference_at = start + interval
 
-            elapsed = time.monotonic() - start
-            self._stop_event.wait(timeout=max(0.0, visual_interval - elapsed))
+            # When camera is available, wait_new_frame at top already paces the loop.
+            # Only add explicit wait when camera is absent.
+            if self._camera_reader is None:
+                elapsed = time.monotonic() - start
+                self._stop_event.wait(timeout=max(0.0, visual_interval - elapsed))
 
     @staticmethod
     def _is_sensor_touched(sensor_data: dict) -> bool:
@@ -853,9 +888,9 @@ class ModelInferenceService:
         }
 
     def _build_feature_vector(self, min_points: int) -> Optional[dict[str, float]]:
-        rows = list(self._history)
-        if len(rows) < min_points:
+        if len(self._history) < min_points:
             return None
+        rows = list(self._history)
 
         window_seconds_cfg = max(5.0, float(getattr(config, "MODEL_FEATURE_WINDOW_S", 30.0)))
         t_latest = float(rows[-1]["t"])

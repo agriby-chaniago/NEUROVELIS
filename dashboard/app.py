@@ -98,7 +98,19 @@ def create_app(
         receives JSON data frames every DASHBOARD_SSE_INTERVAL_S seconds.
         """
         def event_generator():
+            # Per-connection seq: captured at connection open so each client
+            # tracks its own position — no shared state, no cross-tab interference.
+            last_seq = _model_inference_service._result_seq if _model_inference_service is not None else 0
             while True:
+                if _model_inference_service is not None:
+                    with _model_inference_service._result_cond:
+                        _model_inference_service._result_cond.wait_for(
+                            lambda: _model_inference_service._result_seq != last_seq,
+                            timeout=config.DASHBOARD_SSE_INTERVAL_S,
+                        )
+                        last_seq = _model_inference_service._result_seq
+                else:
+                    time.sleep(config.DASHBOARD_SSE_INTERVAL_S)
                 data = _sensor_manager.get_latest()
                 if _model_inference_service is not None:
                     if hasattr(_model_inference_service, "get_latest_compact"):
@@ -121,7 +133,6 @@ def create_app(
                 # Convert None to JSON null cleanly
                 payload = json.dumps(data, default=lambda x: None)
                 yield f"data: {payload}\n\n"
-                time.sleep(config.DASHBOARD_SSE_INTERVAL_S)
 
         return Response(
             stream_with_context(event_generator()),

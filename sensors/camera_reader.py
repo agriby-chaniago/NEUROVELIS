@@ -62,6 +62,9 @@ class CameraReader:
         # Rolling FPS: stores monotonic timestamps of last 60 encoded frames.
         # fps = (n-1) / (ts[-1] - ts[0])  — accurate even with variable cadence.
         self._fps_timestamps: deque = deque(maxlen=60)
+        # Signalled by encode/worker threads on each new frame.
+        # Used by wait_new_frame() for event-driven inference (avoids polling).
+        self._new_frame_event: threading.Event = threading.Event()
 
     # ── Lifecycle ─────────────────────────────────────────────────────────
 
@@ -116,6 +119,25 @@ class CameraReader:
                 timeout=timeout,
             )
             return self._frame
+
+    def wait_new_frame(self, last_seq: int, timeout: float = 0.11) -> tuple[int, Optional[bytes]]:
+        """
+        Block until a frame newer than last_seq arrives, or timeout.
+
+        Returns (current_seq, frame_bytes) when a new frame is available.
+        Returns (last_seq, None) on timeout with no new frame.
+
+        Seq-based design: safe against the clear/get race that a bare
+        threading.Event would have — the seq counter validates that the frame
+        returned is actually newer than the last one the caller processed.
+        Used by the inference thread for event-driven frame consumption.
+        """
+        self._new_frame_event.wait(timeout=timeout)
+        self._new_frame_event.clear()
+        current_seq = self._frame_seq
+        if current_seq != last_seq:
+            return current_seq, self.get_frame()
+        return last_seq, None
 
     def capture_snapshot(self) -> Optional[bytes]:
         """
@@ -482,6 +504,7 @@ class CameraReader:
                             self._frame_seq += 1
                             self._fps_timestamps.append(time.monotonic())
                             self._cond.notify_all()
+                        self._new_frame_event.set()
                     except Exception as enc_exc:
                         logger.debug("CameraReader: encode error: %s", enc_exc)
 
@@ -686,6 +709,7 @@ class CameraReader:
                     self._frame_seq += 1
                     self._fps_timestamps.append(time.monotonic())
                     self._cond.notify_all()
+                self._new_frame_event.set()
         except TimeoutError as exc:
             self._error = str(exc)
             logger.error("CameraReader: %s", self._error)
