@@ -23,6 +23,7 @@ from dashboard.app import create_app
 from experiments.session_manager import SessionManager
 from experiments.respondent_registry import RespondentRegistry
 from model_inference.model_inference_service import ModelInferenceService
+from scan_engine.scan_state_machine import ScanStateMachine
 
 
 # ── Logging setup ────────────────────────────────────────────────────────────
@@ -101,6 +102,14 @@ def main():
     )
     logger.info("SessionManager and RespondentRegistry initialised")
 
+    # ── Start scan state machine ─────────────────────────────────
+    scan_state_machine = ScanStateMachine(
+        model_inference_service,
+        sensor_manager=sensor_manager,
+    )
+    scan_state_machine.start()
+    logger.info("ScanStateMachine started")
+
     # ── Create Flask app ────────────────────────────────────────
     app = create_app(
         sensor_manager,
@@ -108,6 +117,7 @@ def main():
         session_manager=session_manager,
         respondent_registry=respondent_registry,
         model_inference_service=model_inference_service,
+        scan_state_machine=scan_state_machine,
     )
 
     # ── Graceful shutdown on Ctrl+C / SIGTERM ────────────────────────────

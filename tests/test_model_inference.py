@@ -1,5 +1,8 @@
 """Tests for model inference integration (adapter + Flask routes)."""
 
+from collections import deque
+import threading
+
 from model_inference.model_adapter import (
     _compute_independent_chances_from_scores,
 )
@@ -143,6 +146,43 @@ def _make_touch_state_service() -> ModelInferenceService:
     return svc
 
 
+def _make_stability_service() -> ModelInferenceService:
+    svc = ModelInferenceService.__new__(ModelInferenceService)
+    svc._stable_window = deque()
+    svc._stable_window_label = None
+    svc._stable_last_reset_reason = "SERVICE_INIT"
+    svc._lock = threading.Lock()
+    return svc
+
+
+def _running_result(label: str, confidence: float = 0.82) -> dict:
+    return {
+        "model_label_top1": label,
+        "model_confidence_top1": confidence,
+        "model_probs_normal": 0.05,
+        "model_probs_anxiety": 0.12 if label == "anxiety" else 0.08,
+        "model_probs_stress": 0.82 if label == "stress" else 0.12,
+        "model_probs_depression": 0.12 if label == "depression" else 0.05,
+        "model_chance_normal": 0.12,
+        "model_chance_anxiety": 0.2,
+        "model_chance_stress": 0.84,
+        "model_chance_depression": 0.13,
+        "model_runtime_state": "RUNNING",
+    }
+
+
+def _valid_sensor_snapshot() -> dict:
+    return {
+        "sensor_stale": False,
+        "heart_rate_bpm": 84,
+        "hr_valid": True,
+        "spo2_percent": 97,
+        "spo2_valid": True,
+        "gsr_conductance_us": 8.3,
+        "temperature_celsius": 36.4,
+    }
+
+
 def test_sensor_touch_heuristic_requires_valid_hr_spo2_and_gsr():
     assert not ModelInferenceService._is_sensor_touched(
         {
@@ -202,3 +242,36 @@ def test_touch_debounce_requires_consecutive_hits_before_warmup(monkeypatch):
     assert svc._sensor_touch_prev is True
     assert svc._sensor_touch_paused is False
     assert svc._class_warmup_until == 15.0
+
+
+def test_stability_window_resets_on_label_runtime_and_sensor(monkeypatch):
+    monkeypatch.setattr(config, "MODEL_STABLE_RUN_SECONDS", 30.0)
+    monkeypatch.setattr(config, "MODEL_STABLE_VARIANCE_ENABLED", False)
+
+    svc = _make_stability_service()
+    sensor = _valid_sensor_snapshot()
+
+    first = svc._update_stability_tracker(_running_result("stress"), sensor, now=10.0)
+    assert first["model_stable_elapsed_s"] == 0.0
+    assert first["model_stable_ready"] is False
+
+    progressed = svc._update_stability_tracker(_running_result("stress"), sensor, now=20.0)
+    assert progressed["model_stable_elapsed_s"] > 0.0
+
+    changed_label = svc._update_stability_tracker(_running_result("anxiety"), sensor, now=21.0)
+    assert changed_label["model_stable_elapsed_s"] == 0.0
+    assert changed_label["model_stable_ready"] is False
+
+    warmup_state = _running_result("anxiety")
+    warmup_state["model_runtime_state"] = "WARMUP"
+    reset_runtime = svc._update_stability_tracker(warmup_state, sensor, now=22.0)
+    assert reset_runtime["model_stable_reset_reason"] == "RUNTIME_NOT_RUNNING"
+    assert reset_runtime["model_stable_elapsed_s"] == 0.0
+
+    invalid_sensor = dict(sensor)
+    invalid_sensor["hr_valid"] = False
+    reset_sensor = svc._update_stability_tracker(_running_result("stress"), invalid_sensor, now=23.0)
+    assert reset_sensor["model_stable_reset_reason"] == "SENSOR_MISSING_OR_INVALID"
+    assert reset_sensor["model_stable_elapsed_s"] == 0.0
+
+

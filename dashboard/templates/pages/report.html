@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Laporan NeuroVELIS</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --accent:  #2D5BE3;
+      --red:     #b71c1c;
+      --orange:  #c25d00;
+      --blue:    #1a5fad;
+      --green:   #1e7845;
+      --purple:  #5e35b1;
+      --muted:   #6b7f93;
+      --border:  #d4dde8;
+      --bg:      #f4f7fb;
+      --card:    #ffffff;
+      --text:    #1a2b3c;
+    }
+
+    body {
+      font-family: "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 1rem;
+    }
+
+    .container {
+      max-width: 480px;
+      margin: 0 auto;
+    }
+
+    /* Header */
+    .header {
+      text-align: center;
+      padding: 1.5rem 0 1rem;
+    }
+
+    .header h1 {
+      font-size: 1.3rem;
+      font-weight: 800;
+      color: var(--accent);
+      letter-spacing: -0.02em;
+    }
+
+    .header p {
+      font-size: 0.78rem;
+      color: var(--muted);
+      margin-top: 0.2rem;
+    }
+
+    /* Card */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.2rem;
+      margin-bottom: 0.9rem;
+      box-shadow: 0 2px 8px rgba(26, 43, 60, 0.07);
+    }
+
+    .card-title {
+      font-size: 0.68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--muted);
+      margin-bottom: 0.75rem;
+    }
+
+    /* Result badge */
+    .result-dominant {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 0.6rem;
+    }
+
+    .result-badge {
+      display: inline-block;
+      padding: 0.25rem 0.7rem;
+      border-radius: 20px;
+      font-size: 0.8rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .badge-stress     { background: #fff3e0; color: #c25d00; border: 1px solid #f4c38a; }
+    .badge-anxiety    { background: #e8eeff; color: #1a5fad; border: 1px solid #b3c9f0; }
+    .badge-depression { background: #fce4e4; color: #b71c1c; border: 1px solid #f0b3b3; }
+    .badge-normal     { background: #e6f4ec; color: #1e7845; border: 1px solid #9ed4b6; }
+
+    .result-conf {
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+
+    /* Score bars */
+    .score-row {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .score-label {
+      font-size: 0.72rem;
+      width: 6rem;
+      flex-shrink: 0;
+      color: var(--text);
+    }
+
+    .score-bar-track {
+      flex: 1;
+      height: 6px;
+      background: #e8eef5;
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .score-bar-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.4s ease;
+    }
+
+    .score-stress     .score-bar-fill { background: var(--orange); }
+    .score-anxiety    .score-bar-fill { background: var(--blue); }
+    .score-depression .score-bar-fill { background: var(--red); }
+
+    .score-pct {
+      font-size: 0.68rem;
+      width: 2.8rem;
+      text-align: right;
+      color: var(--muted);
+      flex-shrink: 0;
+    }
+
+    /* Metrics grid */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 0.6rem;
+    }
+
+    .metric {
+      background: var(--bg);
+      border-radius: 8px;
+      padding: 0.6rem;
+      text-align: center;
+    }
+
+    .metric-val {
+      font-size: 1.2rem;
+      font-weight: 700;
+      line-height: 1;
+      color: var(--accent);
+    }
+
+    .metric-lbl {
+      font-size: 0.6rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-top: 0.2rem;
+    }
+
+    /* Form */
+    .form-label {
+      display: block;
+      font-size: 0.78rem;
+      font-weight: 600;
+      margin-bottom: 0.35rem;
+      color: var(--text);
+    }
+
+    .form-input {
+      width: 100%;
+      padding: 0.65rem 0.85rem;
+      font-size: 0.9rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      outline: none;
+      transition: border-color 0.15s;
+      font-family: inherit;
+    }
+
+    .form-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(45, 91, 227, 0.12);
+    }
+
+    .form-hint {
+      font-size: 0.66rem;
+      color: var(--muted);
+      margin-top: 0.3rem;
+    }
+
+    .btn-submit {
+      display: block;
+      width: 100%;
+      padding: 0.8rem;
+      background: var(--accent);
+      color: white;
+      border: none;
+      border-radius: 10px;
+      font-size: 0.95rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+      font-family: inherit;
+      margin-top: 0.8rem;
+    }
+
+    .btn-submit:hover   { opacity: 0.9; }
+    .btn-submit:active  { transform: scale(0.98); }
+    .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* Error state */
+    .error-card {
+      background: #fdecea;
+      border: 1px solid #f0b3b3;
+      border-radius: 12px;
+      padding: 1.5rem;
+      text-align: center;
+      color: var(--red);
+    }
+
+    .error-card h2 { font-size: 1rem; margin-bottom: 0.5rem; }
+    .error-card p  { font-size: 0.8rem; opacity: 0.8; }
+
+    /* Disclaimer */
+    .disclaimer {
+      text-align: center;
+      font-size: 0.62rem;
+      color: var(--muted);
+      padding: 0.5rem 0 1.5rem;
+      line-height: 1.5;
+    }
+
+    /* Loading overlay on submit */
+    .btn-submit.loading::after {
+      content: " ⏳";
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>NeuroVELIS</h1>
+    <p>Laporan Deteksi Biometrik</p>
+  </div>
+
+  {% if error %}
+  <div class="error-card">
+    <h2>Akses Tidak Valid</h2>
+    <p>{{ error }}</p>
+  </div>
+
+  {% else %}
+  <!-- Result summary -->
+  <div class="card">
+    <div class="card-title">Hasil Deteksi</div>
+
+    <div class="result-dominant">
+      <span class="result-badge badge-{{ dominant }}">{{ dominant|title }}</span>
+      <span class="result-conf">Confidence: {{ "%.1f"|format(confidence * 100) }}%</span>
+    </div>
+
+    <div class="score-row score-stress">
+      <span class="score-label">Stres</span>
+      <div class="score-bar-track">
+        <div class="score-bar-fill" style="width: {{ "%.0f"|format(scores.stress * 100) }}%"></div>
+      </div>
+      <span class="score-pct">{{ "%.1f"|format(scores.stress * 100) }}%</span>
+    </div>
+    <div class="score-row score-anxiety">
+      <span class="score-label">Kecemasan</span>
+      <div class="score-bar-track">
+        <div class="score-bar-fill" style="width: {{ "%.0f"|format(scores.anxiety * 100) }}%"></div>
+      </div>
+      <span class="score-pct">{{ "%.1f"|format(scores.anxiety * 100) }}%</span>
+    </div>
+    <div class="score-row score-depression">
+      <span class="score-label">Depresi</span>
+      <div class="score-bar-track">
+        <div class="score-bar-fill" style="width: {{ "%.0f"|format(scores.depression * 100) }}%"></div>
+      </div>
+      <span class="score-pct">{{ "%.1f"|format(scores.depression * 100) }}%</span>
+    </div>
+  </div>
+
+  <!-- Biometric metrics -->
+  <div class="card">
+    <div class="card-title">Parameter Biometrik</div>
+    <div class="metrics-grid">
+      <div class="metric">
+        <div class="metric-val">{{ hr }}</div>
+        <div class="metric-lbl">Heart Rate</div>
+      </div>
+      <div class="metric">
+        <div class="metric-val">{{ gsr_level }}</div>
+        <div class="metric-lbl">GSR Level</div>
+      </div>
+      <div class="metric">
+        <div class="metric-val">{{ "%.2f"|format(gsr_value) }}</div>
+        <div class="metric-lbl">GSR (µS)</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Name form → download PDF -->
+  <div class="card">
+    <div class="card-title">Unduh Laporan PDF</div>
+    <form id="report-form"
+          method="POST"
+          action="/report/{{ scan_id }}/generate?token={{ token }}">
+      <label class="form-label" for="name">Nama Lengkap</label>
+      <input class="form-input" type="text" id="name" name="name"
+             placeholder="Masukkan nama Anda"
+             required maxlength="120" autocomplete="name" />
+      <p class="form-hint">Nama akan tercantum di laporan PDF.</p>
+      <button class="btn-submit" type="submit" id="submit-btn">
+        Unduh PDF
+      </button>
+    </form>
+  </div>
+
+  <p class="disclaimer">
+    Scan ID: {{ scan_id[:8] }}... &bull;
+    {{ timestamp }}<br>
+    Hasil ini bersifat informatif — bukan pengganti diagnosis klinis.
+  </p>
+  {% endif %}
+</div>
+
+<script>
+  const form = document.getElementById("report-form");
+  const btn  = document.getElementById("submit-btn");
+  if (form && btn) {
+    form.addEventListener("submit", () => {
+      btn.disabled = true;
+      btn.classList.add("loading");
+      btn.textContent = "Membuat PDF...";
+    });
+  }
+</script>
+</body>
+</html>

@@ -44,6 +44,7 @@ let slowFrameStreak = 0;
 let stableFrameStreak = 0;
 let adaptiveTrailPoints = TRAIL_POINTS_DEFAULT;
 let adaptiveInterpolationMs = 180;
+let _scanLastId = null;  // track QR image reload
 
 function pushLabel(ts) {
   const d = ts ? new Date(ts) : new Date();
@@ -661,6 +662,62 @@ function toReasonMessage(reason) {
   }
 }
 
+const _SCAN_BADGE_CLASS = {
+  idle:         "scan-badge-idle",
+  detecting:    "scan-badge-detecting",
+  warmup:       "scan-badge-warmup",
+  stabilizing:  "scan-badge-stabilizing",
+  result_ready: "scan-badge-result_ready",
+  qr_display:   "scan-badge-qr_display",
+  cooldown:     "scan-badge-cooldown",
+};
+
+function updateScanState(data) {
+  const state    = String(data.scan_state || "IDLE").toLowerCase();
+  const elapsed  = Number(data.scan_elapsed_s || 0);
+  const remaining = Number(data.scan_remaining_s || 0);
+  const hint     = String(data.scan_hint_message || "");
+  const scanId   = data.scan_id || null;
+
+  const badge        = byId("scan-state-badge");
+  const hintEl       = byId("scan-hint");
+  const progressWrap = byId("scan-progress-wrap");
+  const progressBar  = byId("scan-progress-bar");
+  const progressLbl  = byId("scan-progress-label");
+  const qrWrap       = byId("scan-qr-wrap");
+  const qrImage      = byId("scan-qr-image");
+  const qrCountdown  = byId("scan-qr-countdown");
+
+  if (badge) {
+    badge.textContent = state.toUpperCase();
+    badge.className   = `scan-badge ${_SCAN_BADGE_CLASS[state] || "scan-badge-idle"}`;
+  }
+  if (hintEl) hintEl.textContent = hint;
+
+  // Progress bar: STABILIZING only
+  if (progressWrap) progressWrap.hidden = state !== "stabilizing";
+  if (state === "stabilizing" && progressBar) {
+    const dur = Number(data.scan_elapsed_s || 0) + remaining;
+    const pct = dur > 0 ? Math.min(100, Math.round((elapsed / dur) * 100)) : 0;
+    progressBar.style.width = `${pct}%`;
+    if (progressLbl) progressLbl.textContent = `${elapsed.toFixed(0)}s / ${Math.round(dur)}s`;
+  }
+
+  // QR section: QR_DISPLAY only
+  if (qrWrap) qrWrap.hidden = state !== "qr_display";
+  if (state === "qr_display" && scanId) {
+    if (scanId !== _scanLastId && qrImage) {
+      qrImage.src  = `/scan/qr_image/${scanId}?t=${Date.now()}`;
+      _scanLastId  = scanId;
+    }
+    if (qrCountdown) {
+      qrCountdown.textContent = remaining > 0 ? `Tersedia ${remaining.toFixed(0)}s` : "";
+    }
+  } else if (state !== "qr_display") {
+    _scanLastId = null;   // allow reload on next QR_DISPLAY
+  }
+}
+
 function formatLabel(label) {
   if (!label) return "UNKNOWN";
   const normalized = String(label).toLowerCase();
@@ -904,6 +961,7 @@ function connect() {
       updateCards(data, warm);
       updateSignalStatus(data, warm);
       updateAlert(data);
+      updateScanState(data);
       queueChartUpdate(data);
 
       if (data.camera_fps !== null && data.camera_fps !== undefined) {

@@ -9,6 +9,12 @@ GET  /health                        → JSON health check
 GET  /camera/stream                 → MJPEG live video
 GET  /camera/snapshot               → high-res JPEG
 
+Scan routes
+-----------
+GET  /scan/qr_image/<scan_id>       → QR PNG for scan report URL
+GET  /report/<scan_id>              → user-facing report form (phone)
+POST /report/<scan_id>/generate     → generate + stream PDF download
+
 Experiment routes
 -----------------
 GET  /experiment                    → session control panel
@@ -22,14 +28,16 @@ POST /experiment/session/start      → start recording session
 POST /experiment/session/stop       → stop recording session
 """
 
+import io
 import json
 import logging
 import shutil
 import time
 from typing import Optional
+
 from flask import (
     Flask, Response, jsonify, redirect, render_template,
-    request, stream_with_context, url_for,
+    request, send_file, stream_with_context, url_for,
 )
 
 import config
@@ -42,6 +50,7 @@ _camera_reader:    Optional[object] = None
 _session_manager:  Optional[object] = None
 _respondent_registry: Optional[object] = None
 _model_inference_service: Optional[object] = None
+_scan_state_machine: Optional[object] = None
 
 
 def create_app(
@@ -50,6 +59,7 @@ def create_app(
     session_manager=None,
     respondent_registry=None,
     model_inference_service=None,
+    scan_state_machine=None,
 ) -> Flask:
     """
     Factory function — creates and configures the Flask app.
@@ -60,13 +70,17 @@ def create_app(
     camera_reader       : CameraReader          (optional)
     session_manager     : SessionManager        (optional)
     respondent_registry : RespondentRegistry    (optional)
+    model_inference_service : ModelInferenceService (optional)
+    scan_state_machine  : ScanStateMachine      (optional)
     """
-    global _sensor_manager, _camera_reader, _session_manager, _respondent_registry, _model_inference_service
-    _sensor_manager      = sensor_manager
-    _camera_reader       = camera_reader
-    _session_manager     = session_manager
-    _respondent_registry = respondent_registry
+    global _sensor_manager, _camera_reader, _session_manager, _respondent_registry
+    global _model_inference_service, _scan_state_machine
+    _sensor_manager          = sensor_manager
+    _camera_reader           = camera_reader
+    _session_manager         = session_manager
+    _respondent_registry     = respondent_registry
     _model_inference_service = model_inference_service
+    _scan_state_machine      = scan_state_machine
 
     app = Flask(__name__, template_folder="templates", static_folder="static")
     app.config["SECRET_KEY"] = "neurovelis-dev-key"
@@ -95,6 +109,9 @@ def create_app(
                 if _camera_reader is not None:
                     _fps = _camera_reader.fps
                     data["camera_fps"] = round(_fps, 1) if _fps is not None else None
+                # Scan state machine fields
+                if _scan_state_machine is not None:
+                    data.update(_scan_state_machine.get_state())
                 # Disk free space on the data partition
                 try:
                     _du = shutil.disk_usage(config.DATA_DIR)
@@ -228,6 +245,116 @@ def create_app(
         if _model_inference_service is None:
             return jsonify({"status": "error", "message": "Model service not available"}), 503
         return jsonify(_model_inference_service.debug_snapshot())
+
+    @app.route("/scan/qr_image/<scan_id>")
+    def scan_qr_image(scan_id: str):
+        """Generate QR PNG from the frozen scan's qr_url field."""
+        if _scan_state_machine is None:
+            return Response("Scan engine not available", status=503)
+
+        try:
+            import qrcode
+        except ImportError:
+            return Response("qrcode dependency not available", status=503)
+
+        freezer = _scan_state_machine._freezer
+        data = freezer.load(scan_id)
+        if data is None:
+            return Response(status=404)
+
+        qr_url = data.get("qr_url", "")
+        qr_obj = qrcode.QRCode(
+            version=None,
+            error_correction=qrcode.constants.ERROR_CORRECT_M,
+            box_size=8,
+            border=2,
+        )
+        qr_obj.add_data(qr_url)
+        qr_obj.make(fit=True)
+        image = qr_obj.make_image(fill_color="black", back_color="white")
+
+        buf = io.BytesIO()
+        image.save(buf, format="PNG")
+        buf.seek(0)
+
+        return Response(
+            buf.getvalue(),
+            mimetype="image/png",
+            headers={"Cache-Control": "no-cache"},
+        )
+
+    @app.route("/report/<scan_id>")
+    def report_form(scan_id: str):
+        """User-facing report page — verify token, show result + name form."""
+        if _scan_state_machine is None:
+            return render_template("pages/report.html", error="Scan engine not available.")
+
+        token = request.args.get("token", "")
+        freezer = _scan_state_machine._freezer
+
+        if not freezer.verify_token(scan_id, token):
+            return render_template("pages/report.html", error="Link tidak valid atau sudah kedaluwarsa."), 403
+
+        scan_data = freezer.load(scan_id)
+        if scan_data is None:
+            return render_template("pages/report.html", error="Data scan tidak ditemukan."), 404
+
+        result  = scan_data.get("result", {})
+        metrics = result.get("metrics", {})
+        scores  = result.get("scores", {})
+
+        return render_template(
+            "pages/report.html",
+            error=None,
+            scan_id=scan_id,
+            token=token,
+            dominant=result.get("dominant", "normal"),
+            confidence=float(result.get("confidence") or 0),
+            hr=metrics.get("hr", 0),
+            gsr_level=metrics.get("gsr_level", "-"),
+            gsr_value=float(metrics.get("gsr_value") or 0),
+            scores=type("S", (), {
+                "stress":     float(scores.get("stress") or 0),
+                "anxiety":    float(scores.get("anxiety") or 0),
+                "depression": float(scores.get("depression") or 0),
+            })(),
+            timestamp=scan_data.get("timestamp_end", "-"),
+        )
+
+    @app.route("/report/<scan_id>/generate", methods=["POST"])
+    def report_generate(scan_id: str):
+        """Generate PDF report and return as file download."""
+        from dashboard.report_pdf import build_pdf
+
+        if _scan_state_machine is None:
+            return jsonify({"error": "Scan engine not available"}), 503
+
+        token = request.args.get("token", "")
+        freezer = _scan_state_machine._freezer
+
+        if not freezer.verify_token(scan_id, token):
+            return jsonify({"error": "Invalid or expired link"}), 403
+
+        scan_data = freezer.load(scan_id)
+        if scan_data is None:
+            return jsonify({"error": "Scan data not found"}), 404
+
+        name = (request.form.get("name") or "").strip()
+        if not name:
+            return jsonify({"error": "Name is required"}), 400
+
+        try:
+            buf = build_pdf(name, scan_data)
+        except RuntimeError:
+            return jsonify({"error": "Server busy, please retry"}), 429   # FIX 16
+
+        filename = f"neurovelis_{scan_id[:8]}.pdf"
+        return send_file(
+            buf,
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name=filename,
+        )
 
     @app.route("/recalibrate/<sensor_name>", methods=["POST"])
     def recalibrate(sensor_name: str):

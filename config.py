@@ -373,6 +373,25 @@ MODEL_CHANCE_SHRINKAGE = 0.60
 MODEL_CHANCE_MIN = 0.05
 MODEL_CHANCE_MAX = 0.88
 
+# Stable QR emission from /model stream.
+# Rule: runtime must stay RUNNING for this duration with the same label.
+MODEL_STABLE_RUN_SECONDS = 30.0
+
+# Optional advanced gate: require low variance while the stable window accumulates.
+MODEL_STABLE_VARIANCE_ENABLED = False
+MODEL_STABLE_CONFIDENCE_VAR_MAX = 0.0025
+MODEL_STABLE_LABEL_PROB_VAR_MAX = 0.0025
+
+# Route psychiatrist forwarding target per label.
+MODEL_QR_TARGET_FIELD_MAP = {
+    "anxiety": "anxiety",
+    "stress": "stress",
+    "depression": "depression",
+}
+
+# Custom scheme consumed by scanner apps (Flutter / React Native).
+MODEL_QR_FORWARD_URI_TEMPLATE = "neurosense://forward?field={field}"
+
 # ─── Visual Feature Extraction (MediaPipe Face Mesh) ────────────────────
 # Enables full realtime facial dynamics extraction for model features
 # (EAR, MAR, blink rate, facial motion).
@@ -391,3 +410,13 @@ MODEL_EDA_SCR_DIFF_THRESHOLD_US = 0.03
 # Mesh overlay stream interval for /model/mesh_stream (seconds).
 # Keep this separate from dashboard SSE interval to avoid camera lag.
 MODEL_MESH_STREAM_INTERVAL_S = 0.10
+
+# ─── Scan State Machine ───────────────────────────────────────────────────────
+SCAN_DETECTING_DURATION     = 8      # s face must be present before warmup
+SCAN_WARMUP_DURATION        = 5      # s warmup countdown
+SCAN_STABILIZING_DURATION   = 20     # s stabilizing window (data collection)
+SCAN_COOLDOWN_DURATION      = 5      # s wait for user to leave before IDLE
+QR_DISPLAY_DURATION         = 120    # s QR code visible
+FACE_STABLE_THRESHOLD       = 0.02   # bbox center movement / face width → stable if below
+FACE_CONSISTENCY_THRESHOLD  = 0.08   # bbox drift from locked position during STABILIZING
+CONFIDENCE_THRESHOLD        = 0.70   # min model confidence to freeze result

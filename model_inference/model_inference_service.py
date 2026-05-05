@@ -63,6 +63,9 @@ class ModelInferenceService:
         self._sensor_touch_present_hits = 0
         self._sensor_touch_absent_hits = 0
         self._class_warmup_until = 0.0
+        self._stable_window: deque = deque()
+        self._stable_window_label: Optional[str] = None
+        self._stable_last_reset_reason = "SERVICE_INIT"
         self._latest: dict = {
             "model_label_top1": "unknown",
             "model_confidence_top1": None,
@@ -87,6 +90,11 @@ class ModelInferenceService:
             "model_warmup_remaining_s": 0.0,
             "model_runtime_state": "INIT",
             "model_runtime_reason": "SERVICE_INIT",
+            "model_stable_window_s": float(getattr(config, "MODEL_STABLE_RUN_SECONDS", 30.0)),
+            "model_stable_elapsed_s": 0.0,
+            "model_stable_ready": False,
+            "model_stable_variance_ok": False,
+            "model_stable_reset_reason": "SERVICE_INIT",
         }
         self._mesh_latest: dict = {
             "model_face_detected": False,
@@ -161,6 +169,8 @@ class ModelInferenceService:
         with self._lock:
             latest = dict(self._latest)
             fv = dict(self._last_feature_vector) if self._last_feature_vector else None
+            stable_reset_reason = self._stable_last_reset_reason
+            stable_window_points = len(self._stable_window)
         return {
             "latest": latest,
             "feature_vector": fv,
@@ -168,7 +178,134 @@ class ModelInferenceService:
             "history_points": len(self._history),
             "adapter": self._adapter.health(),
             "visual": self._visual_extractor.health(),
+            "stable": {
+                "last_reset_reason": stable_reset_reason,
+                "window_points": stable_window_points,
+            },
         }
+
+    @staticmethod
+    def _sensor_valid_for_stability(sensor_data: dict) -> bool:
+        if bool(sensor_data.get("sensor_stale")):
+            return False
+        if not bool(sensor_data.get("hr_valid")):
+            return False
+        if not bool(sensor_data.get("spo2_valid")):
+            return False
+        required_keys = ["heart_rate_bpm", "spo2_percent", "gsr_conductance_us"]
+        for key in required_keys:
+            if sensor_data.get(key) is None:
+                return False
+        return True
+
+    def _reset_stable_window(self, reason: str) -> None:
+        self._stable_window.clear()
+        self._stable_window_label = None
+        self._stable_last_reset_reason = reason
+
+    def _compute_variance_gate(self, label: str) -> tuple[bool, dict[str, float]]:
+        confidence_values: list[float] = []
+        label_prob_values: list[float] = []
+
+        for row in self._stable_window:
+            try:
+                conf = float(row.get("confidence"))
+                if np.isfinite(conf):
+                    confidence_values.append(conf)
+            except (TypeError, ValueError):
+                pass
+
+            probs = row.get("probs") or {}
+            try:
+                label_prob = float(probs.get(label, 0.0))
+                if np.isfinite(label_prob):
+                    label_prob_values.append(label_prob)
+            except (TypeError, ValueError):
+                pass
+
+        conf_var = float(np.var(confidence_values)) if len(confidence_values) >= 2 else 0.0
+        label_prob_var = float(np.var(label_prob_values)) if len(label_prob_values) >= 2 else 0.0
+        variance_stats = {
+            "confidence_variance": round(conf_var, 8),
+            "label_prob_variance": round(label_prob_var, 8),
+        }
+
+        variance_enabled = bool(getattr(config, "MODEL_STABLE_VARIANCE_ENABLED", False))
+        if not variance_enabled:
+            return True, variance_stats
+
+        conf_max = max(0.0, float(getattr(config, "MODEL_STABLE_CONFIDENCE_VAR_MAX", 0.0025)))
+        label_prob_max = max(0.0, float(getattr(config, "MODEL_STABLE_LABEL_PROB_VAR_MAX", 0.0025)))
+        variance_ok = conf_var <= conf_max and label_prob_var <= label_prob_max
+        return variance_ok, variance_stats
+
+    def _update_stability_tracker(self, result: dict, sensor_data: dict, now: float) -> dict:
+        out = dict(result)
+        stable_window_s = max(1.0, float(getattr(config, "MODEL_STABLE_RUN_SECONDS", 30.0)))
+        runtime_state = str(out.get("model_runtime_state") or "").upper()
+        label = str(out.get("model_label_top1") or "").lower()
+
+        with self._lock:
+            elapsed = 0.0
+            variance_ok = False
+            ready = False
+
+            if runtime_state != "RUNNING":
+                self._reset_stable_window("RUNTIME_NOT_RUNNING")
+            elif label not in {"anxiety", "stress", "depression"}:
+                self._reset_stable_window("LABEL_NOT_ELIGIBLE")
+            elif not self._sensor_valid_for_stability(sensor_data=sensor_data):
+                self._reset_stable_window("SENSOR_MISSING_OR_INVALID")
+            else:
+                if self._stable_window_label is not None and label != self._stable_window_label:
+                    self._reset_stable_window("LABEL_CHANGED")
+
+                if self._stable_window_label is None:
+                    self._stable_window_label = label
+                self._stable_last_reset_reason = "TRACKING"
+
+                self._stable_window.append(
+                    {
+                        "t": float(now),
+                        "confidence": out.get("model_confidence_top1"),
+                        "probs": {
+                            "normal": out.get("model_probs_normal"),
+                            "anxiety": out.get("model_probs_anxiety"),
+                            "stress": out.get("model_probs_stress"),
+                            "depression": out.get("model_probs_depression"),
+                        },
+                        "chances": {
+                            "normal": out.get("model_chance_normal"),
+                            "anxiety": out.get("model_chance_anxiety"),
+                            "stress": out.get("model_chance_stress"),
+                            "depression": out.get("model_chance_depression"),
+                        },
+                        "heart_rate_bpm": sensor_data.get("heart_rate_bpm"),
+                        "spo2_percent": sensor_data.get("spo2_percent"),
+                        "gsr_conductance_us": sensor_data.get("gsr_conductance_us"),
+                        "temperature_celsius": sensor_data.get("temperature_celsius"),
+                    }
+                )
+
+                cutoff = float(now) - stable_window_s
+                while self._stable_window and float(self._stable_window[0]["t"]) < cutoff:
+                    self._stable_window.popleft()
+
+                if self._stable_window:
+                    elapsed = max(
+                        0.0,
+                        float(self._stable_window[-1]["t"]) - float(self._stable_window[0]["t"]),
+                    )
+
+                variance_ok, variance_stats = self._compute_variance_gate(label=label)
+                ready = elapsed >= stable_window_s and variance_ok
+
+            out["model_stable_window_s"] = round(stable_window_s, 2)
+            out["model_stable_elapsed_s"] = round(elapsed, 2)
+            out["model_stable_ready"] = bool(ready)
+            out["model_stable_variance_ok"] = bool(variance_ok)
+            out["model_stable_reset_reason"] = self._stable_last_reset_reason
+        return out
 
     def _loop(self):
         interval = max(0.1, float(config.MODEL_INFERENCE_INTERVAL_S))
@@ -217,6 +354,11 @@ class ModelInferenceService:
                     result["model_face_landmarks"] = landmarks_norm
                     result["model_face_backend"] = self._visual_extractor.health().get("backend")
                     result["model_timestamp_utc"] = datetime.now(timezone.utc).isoformat()
+                    result = self._update_stability_tracker(
+                        result=result,
+                        sensor_data=sensor_data,
+                        now=start,
+                    )
 
                     with self._lock:
                         self._last_feature_vector = None
@@ -276,6 +418,11 @@ class ModelInferenceService:
                 result = self._annotate_runtime_state(result=result, now=start)
 
                 result["model_timestamp_utc"] = datetime.now(timezone.utc).isoformat()
+                result = self._update_stability_tracker(
+                    result=result,
+                    sensor_data=sensor_data,
+                    now=start,
+                )
 
                 with self._lock:
                     self._latest = dict(result)
