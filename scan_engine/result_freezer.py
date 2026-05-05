@@ -40,19 +40,22 @@ def _resolve_base_url() -> str:
         if _last_base_url and (now - _last_checked) < ttl:
             return _last_base_url   # FIX 2: cache hit
 
-    # cache miss — try ngrok local API (non-blocking, timeout=1s)
+    # cache miss — try ngrok local API with retry (guards against startup race condition)
     url = None
-    try:
-        resp = requests.get("http://127.0.0.1:4040/api/tunnels", timeout=1)
-        tunnels = resp.json().get("tunnels", [])
-        for t in tunnels:
-            if t.get("proto") == "https":
-                url = t["public_url"].rstrip("/")
+    for _ in range(3):
+        try:
+            resp = requests.get("http://127.0.0.1:4040/api/tunnels", timeout=1)
+            tunnels = resp.json().get("tunnels", [])
+            for t in tunnels:
+                if t.get("proto") == "https":
+                    url = t["public_url"].rstrip("/")
+                    break
+            if url is None and tunnels:
+                url = tunnels[0]["public_url"].rstrip("/")
+            if url:
                 break
-        if url is None and tunnels:
-            url = tunnels[0]["public_url"].rstrip("/")
-    except Exception:
-        pass
+        except Exception:
+            time.sleep(0.5)  # only on failure — no overhead when ngrok ready
 
     if url is None:
         # fallback: LAN IP via UDP socket trick (never actually sends data)
