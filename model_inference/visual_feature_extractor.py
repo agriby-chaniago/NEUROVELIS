@@ -117,7 +117,7 @@ class VisualFeatureExtractor:
             try:
                 self._face_mesh = mp.solutions.face_mesh.FaceMesh(
                     static_image_mode=False,
-                    max_num_faces=1,
+                    max_num_faces=2,
                     refine_landmarks=True,
                     min_detection_confidence=float(min_detection_confidence),
                     min_tracking_confidence=float(min_tracking_confidence),
@@ -155,7 +155,7 @@ class VisualFeatureExtractor:
             options = mp_vision.FaceLandmarkerOptions(
                 base_options=base_options,
                 running_mode=mp_vision.RunningMode.VIDEO,
-                num_faces=1,
+                num_faces=2,
                 min_face_detection_confidence=float(min_detection_confidence),
                 min_face_presence_confidence=float(min_tracking_confidence),
                 min_tracking_confidence=float(min_tracking_confidence),
@@ -264,20 +264,24 @@ class VisualFeatureExtractor:
                     self._next_video_ts_ms(),
                 )
                 if result.face_landmarks:
-                    return self._features_from_landmarks(
+                    features = self._features_from_landmarks(
                         landmarks=result.face_landmarks[0],
                         width=width,
                         height=height,
                     )
+                    features["face_count"] = len(result.face_landmarks)
+                    return features
 
             if self._face_mesh is not None:
                 results = self._face_mesh.process(frame_rgb)
                 if results.multi_face_landmarks:
-                    return self._features_from_landmarks(
+                    features = self._features_from_landmarks(
                         landmarks=results.multi_face_landmarks[0].landmark,
                         width=width,
                         height=height,
                     )
+                    features["face_count"] = len(results.multi_face_landmarks)
+                    return features
 
             self._prev_motion_points = None
             self._eyes_closed = False

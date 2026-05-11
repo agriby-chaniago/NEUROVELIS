@@ -83,7 +83,7 @@ def _build(name: str, scan_data: dict) -> BytesIO:
     metrics  = result.get("metrics") or {}
     scores   = result.get("scores") or {}
 
-    h("Laporan Deteksi NeuroVELIS")
+    h("Laporan Deteksi NeuroVelis AI")
     gap()
 
     h("Identitas", "Heading2")
@@ -97,18 +97,27 @@ def _build(name: str, scan_data: dict) -> BytesIO:
     p(f"<b>Confidence:</b> {conf * 100:.1f}%")
     gap()
 
-    hr_val  = metrics.get("hr") or 0
-    gsr_lv  = metrics.get("gsr_level") or "-"
-    gsr_raw = metrics.get("gsr_value")
-    gsr_str = f"{float(gsr_raw):.2f}" if gsr_raw is not None else "-"
+    hr_val       = metrics.get("hr") or 0
+    gsr_lv       = metrics.get("gsr_level") or "-"
+    gsr_raw      = metrics.get("gsr_value")
+    gsr_str      = f"{float(gsr_raw):.2f}" if gsr_raw is not None else "-"
+    spo2_val     = metrics.get("spo2") or 0
+    temp_val     = metrics.get("temperature") or 0
+    pres_val     = metrics.get("pressure") or 0
+    sample_count = metrics.get("sample_count") or 0
 
     h("Parameter Biometrik", "Heading2")
     _table(story, [
-        ["Parameter",        "Nilai"],
-        ["Heart Rate (BPM)", str(hr_val)],
-        ["GSR Level",        gsr_lv],
-        ["GSR Value (µS)",   gsr_str],
+        ["Parameter",            "Nilai"],
+        ["Heart Rate (BPM)",     str(hr_val)],
+        ["SpO2 (%)",             f"{spo2_val:.1f}"],
+        ["Suhu Ruangan * (°C)",  f"{temp_val:.1f}"],
+        ["Tekanan Udara (hPa)",  f"{pres_val:.1f}"],
+        ["GSR Level",            gsr_lv],
+        ["GSR Value (µS)",       gsr_str],
     ])
+    p("<i>* Suhu yang tercatat adalah suhu ruangan, bukan suhu tubuh.</i>")
+    p(f"<i>Data dihitung dari {sample_count} sampel valid selama pengukuran.</i>")
     gap()
 
     h("Distribusi Skor Kelas", "Heading2")

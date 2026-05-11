@@ -412,11 +412,18 @@ MODEL_EDA_SCR_DIFF_THRESHOLD_US = 0.03
 MODEL_MESH_STREAM_INTERVAL_S = 0.10
 
 # ─── Scan State Machine ───────────────────────────────────────────────────────
-SCAN_DETECTING_DURATION     = 8      # s face must be present before warmup
-SCAN_WARMUP_DURATION        = 5      # s warmup countdown
-SCAN_STABILIZING_DURATION   = 20     # s stabilizing window (data collection)
-SCAN_COOLDOWN_DURATION      = 5      # s wait for user to leave before IDLE
-QR_DISPLAY_DURATION         = 120    # s QR code visible
-FACE_STABLE_THRESHOLD       = 0.02   # bbox center movement / face width → stable if below
-FACE_CONSISTENCY_THRESHOLD  = 0.08   # bbox drift from locked position during STABILIZING
-CONFIDENCE_THRESHOLD        = 0.70   # min model confidence to freeze result
+SCAN_DETECTING_DURATION         = 8      # s face must be present before warmup
+SCAN_WARMUP_DURATION            = 5      # s warmup countdown
+SCAN_STABILIZING_DURATION       = 20     # s stabilizing window
+SCAN_DATA_COLLECTION_DURATION   = 20     # s collect + average inference + sensor data
+SCAN_COOLDOWN_DURATION          = 5      # s wait for user to leave before IDLE
+QR_DISPLAY_DURATION             = 120    # s QR code visible
+FACE_STABLE_THRESHOLD           = 0.02   # bbox center movement / face width → stable if below
+FACE_CONSISTENCY_THRESHOLD      = 0.08   # bbox drift from locked position during STABILIZING
+CONFIDENCE_THRESHOLD            = 0.70   # kept for reference; no longer used as freeze gate
+SCAN_MIN_SAMPLES                = 10     # min valid samples before freeze allowed
+HR_VALID_MIN                    = 30     # BPM — reject absurd sensor readings
+HR_VALID_MAX                    = 200
+SPO2_VALID_MIN                  = 70.0   # % — reject noise
+SPO2_VALID_MAX                  = 100.0
+MAX_STATE_DURATION_MULTIPLIER   = 2.5    # watchdog: auto-reset if elapsed > duration × this

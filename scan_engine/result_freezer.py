@@ -118,8 +118,12 @@ class ResultFreezer:
         base    = _resolve_base_url()
         qr_url  = f"{base}/report/{scan_id}?token={token}"
 
-        hr_val  = _safe_int(latest.get("heart_rate_bpm"), 0)      # FIX 8
-        gsr_val = _safe_float(latest.get("gsr_conductance_us"), 0.0)
+        hr_val       = _safe_int(latest.get("heart_rate_bpm"), 0)
+        gsr_val      = _safe_float(latest.get("gsr_conductance_us"), 0.0)
+        spo2_val     = _safe_float(latest.get("spo2_percent"), 0.0)
+        temp_val     = _safe_float(latest.get("temperature_celsius"), 0.0)
+        pres_val     = _safe_float(latest.get("pressure_hpa"), 0.0)
+        sample_count = int(latest.get("_sample_count") or 0)
 
         payload = {
             "scan_id":         scan_id,
@@ -129,9 +133,13 @@ class ResultFreezer:
                 "dominant":   label,
                 "confidence": round(_safe_float(confidence), 4),
                 "metrics": {
-                    "hr":        hr_val,
-                    "gsr_level": _gsr_level(gsr_val),
-                    "gsr_value": round(gsr_val, 3),
+                    "hr":           hr_val,
+                    "gsr_level":    _gsr_level(gsr_val),
+                    "gsr_value":    round(gsr_val, 3),
+                    "spo2":         round(spo2_val, 1),
+                    "temperature":  round(temp_val, 1),
+                    "pressure":     round(pres_val, 1),
+                    "sample_count": sample_count,
                 },
                 "scores": {
                     "stress":     round(_safe_float(latest.get("model_probs_stress")), 4),
@@ -144,8 +152,18 @@ class ResultFreezer:
         }
 
         path = os.path.join(SCANS_DIR, f"{scan_id}.json")
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(payload, f, indent=2)
+        import tempfile
+        tmp_fd, tmp_path = tempfile.mkstemp(dir=SCANS_DIR, suffix=".tmp")
+        try:
+            with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+                json.dump(payload, f, indent=2)
+            os.replace(tmp_path, path)
+        except Exception:
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass
+            raise
 
         # FIX 5: periodic cleanup
         ResultFreezer._scan_count += 1

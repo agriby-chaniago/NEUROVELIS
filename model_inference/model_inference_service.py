@@ -375,6 +375,7 @@ class ModelInferenceService:
                     result["model_loop_latency_ms"] = 0
                     result = self._annotate_runtime_state(result=result, now=start)
                     result["model_face_detected"] = face_detected
+                    result["model_face_count"]    = int(visual_features.get("face_count", 0))
                     result["model_face_landmarks"] = landmarks_norm
                     result["model_face_backend"] = _vfe_backend
                     result["model_timestamp_utc"] = datetime.now(timezone.utc).isoformat()
@@ -441,6 +442,7 @@ class ModelInferenceService:
                 result = self._apply_smoothing(result)
                 result = self._apply_class_warmup_gate(result=result, now=start)
                 result["model_face_detected"] = face_detected
+                result["model_face_count"]    = int(visual_features.get("face_count", 0))
                 result["model_face_landmarks"] = landmarks_norm
                 result["model_face_backend"] = _vfe_backend
                 result = self._annotate_runtime_state(result=result, now=start)
