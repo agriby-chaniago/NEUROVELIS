@@ -7,7 +7,9 @@ NGROK_BIN="/usr/local/bin/ngrok"
 NGROK_URL="https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-arm64.tgz"
 SERVICE_FILE="/etc/systemd/system/ngrok.service"
 NEUROVELIS_SERVICE="/etc/systemd/system/neurovelis.service"
-NGROK_CONFIG="/home/pi/.config/ngrok/ngrok.yml"
+NGROK_USER="${SUDO_USER:-$(logname 2>/dev/null || whoami)}"
+NGROK_HOME=$(getent passwd "$NGROK_USER" | cut -d: -f6)
+NGROK_CONFIG="$NGROK_HOME/.config/ngrok/ngrok.yml"
 
 # ── 1. Install binary ─────────────────────────────────────────────────────────
 
@@ -36,11 +38,11 @@ if [[ -z "$NGROK_TOKEN" ]]; then
     exit 1
 fi
 
-# Register token as the pi user (config lives in /home/pi/.config/ngrok/)
-sudo -u pi "$NGROK_BIN" config add-authtoken "$NGROK_TOKEN"
+# Register token as the service user (config lives in ~/.config/ngrok/)
+sudo -u "$NGROK_USER" "$NGROK_BIN" config add-authtoken "$NGROK_TOKEN"
 
 # Validate config
-if ! sudo -u pi "$NGROK_BIN" config check > /dev/null 2>&1; then
+if ! sudo -u "$NGROK_USER" "$NGROK_BIN" config check > /dev/null 2>&1; then
     echo "ERR: ngrok config invalid — check authtoken (ERR_NGROK_4018)"
     exit 1
 fi
@@ -48,7 +50,7 @@ echo "[ok] authtoken valid"
 
 # ── 3. Write ngrok.service ────────────────────────────────────────────────────
 
-cat > "$SERVICE_FILE" << 'EOF'
+cat > "$SERVICE_FILE" << EOF
 [Unit]
 Description=ngrok tunnel for NEUROSENSE
 After=network-online.target
@@ -56,10 +58,10 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=pi
-Environment=HOME=/home/pi
+User=$NGROK_USER
+Environment=HOME=$NGROK_HOME
 ExecStart=/usr/local/bin/ngrok http 5000 \
-    --config=/home/pi/.config/ngrok/ngrok.yml \
+    --config=$NGROK_HOME/.config/ngrok/ngrok.yml \
     --web-addr=127.0.0.1:4040 \
     --log=stdout
 Restart=always
