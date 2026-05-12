@@ -22,13 +22,13 @@ _logger = logging.getLogger(__name__)
 
 _HINTS = {
     "IDLE":            "",
-    "DETECTING":       "Please stay in front of the camera",
-    "WARMUP":          "Preparing...",
-    "STABILIZING":     "Hold still...",
-    "DATA_COLLECTION": "Stabil, mohon tunggu...",
-    "RESULT_READY":    "Processing result...",
-    "QR_DISPLAY":      "Scan QR with your phone",
-    "COOLDOWN":        "Please step away to start a new scan",
+    "DETECTING":       "Pastikan wajah dan sensor terdeteksi secara bersamaan",
+    "WARMUP":          "Persiapan... Jangan lepas sensor",
+    "STABILIZING":     "Jangan bergerak — wajah dan sensor harus tetap terdeteksi",
+    "DATA_COLLECTION": "Stabil, mohon tunggu... Jangan lepas sensor",
+    "RESULT_READY":    "Memproses hasil...",
+    "QR_DISPLAY":      "Scan QR dengan HP",
+    "COOLDOWN":        "Mundur dari kamera untuk scan berikutnya",
 }
 
 _DURATIONS = {
@@ -57,6 +57,11 @@ class ScanStateMachine:
         self._locked_bbox        = None   # locked at STABILIZING entry
         self._face_absent_since  = None
         self._inconsistent_count = 0      # FIX 12: jitter counter
+
+        # sensor tracking
+        self._sensor_wait         = False  # True when in DETECTING waiting for sensor touch
+        self._sensor_was_ok       = False  # True once sensor was present in DETECTING (detect drop)
+        self._sensor_absent_since = None   # grace period for STABILIZING/DATA_COLLECTION
 
         # DATA_COLLECTION
         self._data_samples:    list = []
@@ -88,7 +93,11 @@ class ScanStateMachine:
             "scan_state":        state,
             "scan_elapsed_s":    round(elapsed, 1),
             "scan_remaining_s":  round(remaining, 1),
-            "scan_hint_message": _HINTS.get(state, ""),   # FIX 10, 17
+            "scan_hint_message": (
+                "Sensor tidak terdeteksi — letakkan jari pada sensor"
+                if self._sensor_wait
+                else _HINTS.get(state, "")
+            ),
             "scan_id":           frozen["scan_id"] if frozen else None,
             "scan_qr_url":       frozen.get("qr_url") if frozen else None,
         }
@@ -108,10 +117,13 @@ class ScanStateMachine:
         self._frozen_result      = None
         self._prev_bbox          = None
         self._locked_bbox        = None
-        self._inconsistent_count = 0
-        self._face_absent_since  = None
-        self._data_samples       = []
-        self._locked_face_bbox   = None
+        self._inconsistent_count  = 0
+        self._face_absent_since   = None
+        self._data_samples        = []
+        self._locked_face_bbox    = None
+        self._sensor_wait         = False
+        self._sensor_was_ok       = False
+        self._sensor_absent_since = None
 
     @staticmethod
     def _bbox_from_landmarks(landmarks):
@@ -194,6 +206,14 @@ class ScanStateMachine:
                 return False
         return True
 
+    def _sensor_ready(self, sensor_snapshot: dict) -> bool:
+        """True if sensor is providing valid readings, or no sensor_manager configured."""
+        if self._sensor_manager is None:
+            return True
+        hr = sensor_snapshot.get("heart_rate_bpm")
+        stale = sensor_snapshot.get("sensor_stale", True)
+        return hr is not None and not stale
+
     # ── main loop ─────────────────────────────────────────────────────────────
 
     def _loop(self):
@@ -243,11 +263,27 @@ class ScanStateMachine:
 
             elif state == "DETECTING":
                 if not face:
-                    self._reset_to_idle()           # FIX 13/18
+                    self._reset_to_idle()
+                    return
+
+                sensor_ok = self._sensor_ready(sensor_snapshot)
+                if sensor_ok:
+                    self._sensor_was_ok = True
+                    self._sensor_wait   = False
                 else:
-                    self._prev_bbox = bbox
-                    if self._elapsed() >= config.SCAN_DETECTING_DURATION:
-                        self._transition("WARMUP")
+                    if self._sensor_was_ok:
+                        # sensor was present, now dropped → reset
+                        _logger.warning("ScanSM: sensor dropped in DETECTING, reset")
+                        self._reset_to_idle()
+                        return
+                    else:
+                        # sensor never attached → hold in DETECTING, update hint
+                        self._sensor_wait = True
+
+                self._prev_bbox = bbox
+                if self._elapsed() >= config.SCAN_DETECTING_DURATION and sensor_ok:
+                    self._sensor_wait = False
+                    self._transition("WARMUP")
 
             elif state == "WARMUP":
                 if not face:
@@ -266,10 +302,22 @@ class ScanStateMachine:
                 if not face:
                     if self._face_absent_since is None:
                         self._face_absent_since = time.monotonic()
-                    elif time.monotonic() - self._face_absent_since > 2.0:
+                    elif time.monotonic() - self._face_absent_since > 5.0:
                         self._reset_to_idle()
                 else:
                     self._face_absent_since = None
+
+                    # sensor absent gate (5s grace)
+                    if not self._sensor_ready(sensor_snapshot):
+                        if self._sensor_absent_since is None:
+                            self._sensor_absent_since = time.monotonic()
+                        elif time.monotonic() - self._sensor_absent_since > 5.0:
+                            _logger.warning("ScanSM: sensor absent in STABILIZING, reset")
+                            self._reset_to_idle()
+                            return
+                    else:
+                        self._sensor_absent_since = None
+
                     stable     = self._face_stable(bbox)
                     consistent = self._face_consistent(bbox)
                     self._prev_bbox = bbox
@@ -281,9 +329,10 @@ class ScanStateMachine:
                     else:
                         self._inconsistent_count = 0
                         if self._elapsed() >= config.SCAN_STABILIZING_DURATION:
-                            self._data_samples     = []
-                            self._locked_face_bbox = bbox
-                            self._face_absent_since = None
+                            self._data_samples        = []
+                            self._locked_face_bbox    = bbox
+                            self._face_absent_since   = None
+                            self._sensor_absent_since = None
                             _logger.info("ScanSM: STABILIZING → DATA_COLLECTION")
                             self._transition("DATA_COLLECTION")
 
@@ -298,12 +347,23 @@ class ScanStateMachine:
                 if not face:
                     if self._face_absent_since is None:
                         self._face_absent_since = time.monotonic()
-                    elif time.monotonic() - self._face_absent_since > 2.0:
+                    elif time.monotonic() - self._face_absent_since > 5.0:
                         _logger.warning("ScanSM: face lost during DATA_COLLECTION, reset")
                         self._reset_to_idle()
                     return
 
                 self._face_absent_since = None
+
+                # sensor absent gate (5s grace)
+                if not self._sensor_ready(sensor_snapshot):
+                    if self._sensor_absent_since is None:
+                        self._sensor_absent_since = time.monotonic()
+                    elif time.monotonic() - self._sensor_absent_since > 5.0:
+                        _logger.warning("ScanSM: sensor absent in DATA_COLLECTION, reset")
+                        self._reset_to_idle()
+                        return
+                else:
+                    self._sensor_absent_since = None
 
                 # identity continuity guard
                 if bbox and self._locked_face_bbox:
