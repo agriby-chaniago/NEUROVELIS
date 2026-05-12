@@ -14,9 +14,27 @@ import math
 import time
 import threading
 from collections import Counter
+from datetime import datetime, timezone
 
 import config
 from scan_engine.result_freezer import ResultFreezer
+
+
+def _is_valid_reading(value, lo=None, hi=None) -> bool:
+    """Return True if value is a finite number within optional [lo, hi] range."""
+    if value is None:
+        return False
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return False
+    if math.isnan(f) or math.isinf(f):
+        return False
+    if lo is not None and f < lo:
+        return False
+    if hi is not None and f > hi:
+        return False
+    return True
 
 _logger = logging.getLogger(__name__)
 
@@ -80,9 +98,10 @@ class ScanStateMachine:
 
     def get_state(self) -> dict:
         with self._lock:                    # FIX 3: lock for all shared reads
-            state  = self._state
-            entered = self._state_entered
-            frozen = self._frozen_result    # local copy — safe to read outside lock
+            state       = self._state
+            entered     = self._state_entered
+            frozen      = self._frozen_result    # local copy — safe to read outside lock
+            sensor_wait = self._sensor_wait
 
         elapsed   = time.monotonic() - entered
         cfg_key   = _DURATIONS.get(state)
@@ -90,16 +109,17 @@ class ScanStateMachine:
         remaining = max(0.0, duration - elapsed) if duration else 0.0
 
         return {
-            "scan_state":        state,
-            "scan_elapsed_s":    round(elapsed, 1),
-            "scan_remaining_s":  round(remaining, 1),
-            "scan_hint_message": (
+            "scan_state":              state,
+            "scan_elapsed_s":          round(elapsed, 1),
+            "scan_remaining_s":        round(remaining, 1),
+            "scan_hint_message":       (
                 "Sensor tidak terdeteksi — letakkan jari pada sensor"
-                if self._sensor_wait
+                if sensor_wait
                 else _HINTS.get(state, "")
             ),
-            "scan_id":           frozen["scan_id"] if frozen else None,
-            "scan_qr_url":       frozen.get("qr_url") if frozen else None,
+            "scan_waiting_for_sensor": sensor_wait,
+            "scan_id":                 frozen["scan_id"] if frozen else None,
+            "scan_qr_url":             frozen.get("qr_url") if frozen else None,
         }
 
     # ── internal helpers ──────────────────────────────────────────────────────
@@ -207,12 +227,17 @@ class ScanStateMachine:
         return True
 
     def _sensor_ready(self, sensor_snapshot: dict) -> bool:
-        """True if sensor is providing valid readings, or no sensor_manager configured."""
+        """True if both HR and GSR sensors are providing valid readings."""
         if self._sensor_manager is None:
             return True
-        hr = sensor_snapshot.get("heart_rate_bpm")
-        stale = sensor_snapshot.get("sensor_stale", True)
-        return hr is not None and not stale
+        if sensor_snapshot.get("sensor_stale", True):
+            return False
+        hr  = sensor_snapshot.get("heart_rate_bpm")
+        gsr = sensor_snapshot.get("gsr_conductance_us")
+        return (
+            _is_valid_reading(hr,  lo=config.HR_VALID_MIN, hi=config.HR_VALID_MAX)
+            and _is_valid_reading(gsr, lo=0.0)
+        )
 
     # ── main loop ─────────────────────────────────────────────────────────────
 
@@ -221,14 +246,33 @@ class ScanStateMachine:
             try:
                 self._tick()
             except Exception:
-                pass
+                _logger.exception("ScanSM: uncaught error in _tick()")
             time.sleep(0.1)
 
     def _tick(self):
         latest    = self._mis.get_latest()
         mesh      = self._mis.get_mesh_latest()
-        face      = latest.get("model_face_detected", False)
-        face_count = int(latest.get("model_face_count", 0))  # 0 = missing/invalid
+
+        # Face freshness gate — model_face_detected has no staleness protection
+        _ts_str = latest.get("model_timestamp_utc")
+        _face_fresh = False
+        if _ts_str:
+            try:
+                _ts = datetime.fromisoformat(_ts_str)
+                if _ts.tzinfo is None:
+                    _ts = _ts.replace(tzinfo=timezone.utc)
+                _face_fresh = (
+                    (datetime.now(timezone.utc) - _ts).total_seconds()
+                    < config.SCAN_MODEL_STALE_TIMEOUT_S
+                )
+            except (ValueError, TypeError, OverflowError):
+                pass  # malformed timestamp → treat as stale
+
+        face       = latest.get("model_face_detected", False) and _face_fresh
+        try:
+            face_count = int(latest.get("model_face_count", 0)) if _face_fresh else 0
+        except (TypeError, ValueError):
+            face_count = 0
         landmarks = (mesh or {}).get("model_face_landmarks", [])
 
         confidence = float(latest.get("model_confidence_top1") or 0.0)
@@ -268,6 +312,10 @@ class ScanStateMachine:
 
                 sensor_ok = self._sensor_ready(sensor_snapshot)
                 if sensor_ok:
+                    if not self._sensor_was_ok:
+                        # Sensor first becomes valid — restart 8s clock so countdown
+                        # counts from when BOTH face AND sensor are active simultaneously
+                        self._state_entered = time.monotonic()
                     self._sensor_was_ok = True
                     self._sensor_wait   = False
                 else:
@@ -287,7 +335,10 @@ class ScanStateMachine:
 
             elif state == "WARMUP":
                 if not face:
-                    self._reset_to_idle()           # FIX 13/18
+                    self._reset_to_idle()
+                elif not self._sensor_ready(sensor_snapshot):
+                    _logger.warning("ScanSM: sensor dropped in WARMUP, reset")
+                    self._reset_to_idle()
                 else:
                     self._prev_bbox = bbox
                     if self._elapsed() >= config.SCAN_WARMUP_DURATION:
@@ -295,7 +346,7 @@ class ScanStateMachine:
                         self._transition("STABILIZING")
 
             elif state == "STABILIZING":
-                if face_count != 1:
+                if face_count > 1:
                     _logger.warning("ScanSM: %d faces in STABILIZING, reset", face_count)
                     self._reset_to_idle()
                     return
@@ -318,7 +369,6 @@ class ScanStateMachine:
                     else:
                         self._sensor_absent_since = None
 
-                    stable     = self._face_stable(bbox)
                     consistent = self._face_consistent(bbox)
                     self._prev_bbox = bbox
 
@@ -338,7 +388,7 @@ class ScanStateMachine:
 
             elif state == "DATA_COLLECTION":
                 # multi-face guard
-                if face_count != 1:
+                if face_count > 1:
                     _logger.warning("ScanSM: %d faces in DATA_COLLECTION, reset", face_count)
                     self._reset_to_idle()
                     return
@@ -402,7 +452,11 @@ class ScanStateMachine:
                         return
 
                     valid_labels = [s["label"] for s in self._data_samples if s.get("label")]
-                    avg_label = Counter(valid_labels).most_common(1)[0][0] if valid_labels else "normal"
+                    if valid_labels:
+                        avg_label = Counter(valid_labels).most_common(1)[0][0]
+                    else:
+                        _logger.warning("ScanSM: no valid labels in samples, defaulting to 'normal'")
+                        avg_label = "normal"
 
                     label_to_key = {"stress": "stress", "anxiety": "anxiety", "depression": "depression"}
                     prob_key = label_to_key.get(avg_label)

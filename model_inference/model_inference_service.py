@@ -53,7 +53,7 @@ class ModelInferenceService:
         self._thread: Optional[threading.Thread] = None
         self._lock = threading.Lock()
         self._history: deque = deque()
-        self._prev_frame: Optional[bytes] = None
+        self._prev_frame: Optional[bytes] = None  # kept for compatibility; unused after fix
         self._smoothed_probs: Optional[dict[str, float]] = None
         self._last_feature_vector: Optional[dict[str, float]] = None
         self._last_feature_timestamp_utc: Optional[str] = None
@@ -338,6 +338,9 @@ class ModelInferenceService:
             # Without this, event-driven at 60fps → 6x current CPU load.
             now = time.monotonic()
             if frame is not None and (now - last_visual_time) < 0.05:
+                # Still record sensor data on throttled frames so history stays dense.
+                # Visual features omitted (empty dict) — only extraction is skipped.
+                self._append_history(sensor_data=sensor_data, frame=frame, visual_features={})
                 continue
             if frame is not None:
                 last_visual_time = now
@@ -695,8 +698,9 @@ class ModelInferenceService:
         motion_f = float(motion_val) if motion_val is not None else None
         blink_f = float(blink_event) if blink_event is not None else 0.0
 
-        frame_changed = 1.0 if (frame is not None and frame != self._prev_frame) else 0.0
-        self._prev_frame = frame
+        # wait_new_frame returns None on timeout → non-None frame is always a new frame.
+        # O(1) check replaces the previous O(n) byte comparison.
+        frame_changed = 1.0 if frame is not None else 0.0
 
         self._history.append(
             {

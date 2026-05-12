@@ -718,7 +718,9 @@ function updateScanState(data) {
   if (bannerState) bannerState.textContent = cfg.label;
   if (bannerReason) bannerReason.textContent = hint;
   if (bannerCd) {
-    if (cfg.timer === "remaining") {
+    if (data.scan_waiting_for_sensor) {
+      bannerCd.textContent = "--";
+    } else if (cfg.timer === "remaining") {
       bannerCd.textContent = remaining > 0 ? `${remaining.toFixed(0)}s` : "--";
     } else if (cfg.timer === "progress") {
       const total = elapsed + remaining;

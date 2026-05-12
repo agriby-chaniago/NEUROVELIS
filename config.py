@@ -413,6 +413,7 @@ MODEL_MESH_STREAM_INTERVAL_S = 0.10
 
 # ─── Scan State Machine ───────────────────────────────────────────────────────
 SCAN_DETECTING_DURATION         = 8      # s face must be present before warmup
+SCAN_MODEL_STALE_TIMEOUT_S      = 2.0    # s since last inference before face treated as absent
 SCAN_WARMUP_DURATION            = 5      # s warmup countdown
 SCAN_STABILIZING_DURATION       = 20     # s stabilizing window
 SCAN_DATA_COLLECTION_DURATION   = 20     # s collect + average inference + sensor data
