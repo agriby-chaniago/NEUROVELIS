@@ -1,3 +1,7 @@
+.main-layout {
+  grid-template-columns: 300px 1fr;
+}
+
 #model-alert {
   display: none;
   align-items: center;

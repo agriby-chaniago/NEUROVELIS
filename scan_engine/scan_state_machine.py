@@ -501,16 +501,8 @@ class ScanStateMachine:
                 self._transition("QR_DISPLAY")
 
             elif state == "QR_DISPLAY":
-                if not face:
-                    if self._face_absent_since is None:
-                        self._face_absent_since = time.monotonic()
-                    elif time.monotonic() - self._face_absent_since > 3.0:
-                        self._transition("COOLDOWN")
-                        self._face_absent_since = None
-                else:
-                    self._face_absent_since = None
-
                 if self._elapsed() >= config.QR_DISPLAY_DURATION:
+                    self._face_absent_since = None
                     self._transition("COOLDOWN")
 
             elif state == "COOLDOWN":

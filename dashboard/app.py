@@ -274,19 +274,27 @@ def create_app(
             return Response(status=404)
 
         qr_url = data.get("qr_url", "")
-        qr_obj = qrcode.QRCode(
-            version=None,
-            error_correction=qrcode.constants.ERROR_CORRECT_M,
-            box_size=8,
-            border=2,
-        )
-        qr_obj.add_data(qr_url)
-        qr_obj.make(fit=True)
-        image = qr_obj.make_image(fill_color="black", back_color="white")
+        if not qr_url:
+            logger.error("scan_qr_image: qr_url empty for scan_id=%s", scan_id)
+            return Response("QR URL not found in scan data", status=500)
 
-        buf = io.BytesIO()
-        image.save(buf, format="PNG")
-        buf.seek(0)
+        try:
+            qr_obj = qrcode.QRCode(
+                version=None,
+                error_correction=qrcode.constants.ERROR_CORRECT_M,
+                box_size=8,
+                border=2,
+            )
+            qr_obj.add_data(qr_url)
+            qr_obj.make(fit=True)
+            image = qr_obj.make_image(fill_color="black", back_color="white")
+
+            buf = io.BytesIO()
+            image.save(buf, format="PNG")
+            buf.seek(0)
+        except Exception as exc:
+            logger.error("scan_qr_image: qrcode generation failed for scan_id=%s: %s", scan_id, exc)
+            return Response(f"QR generation error: {exc}", status=500)
 
         return Response(
             buf.getvalue(),
