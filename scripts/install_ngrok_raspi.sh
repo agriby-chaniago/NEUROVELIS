@@ -82,6 +82,37 @@ systemctl daemon-reload
 systemctl enable ngrok
 echo "[ok] ngrok.service enabled (will start on next boot)"
 
+# ── 4b. Polkit rule — passwordless service control for NGROK_USER ─────────────
+
+POLKIT_RULES_DIR="/etc/polkit-1/rules.d"
+POLKIT_PKLA_DIR="/etc/polkit-1/localauthority/50-local.d"
+
+if [[ -d "$POLKIT_RULES_DIR" ]]; then
+    cat > "$POLKIT_RULES_DIR/49-ngrok-nopasswd.rules" << EOF
+polkit.addRule(function(action, subject) {
+    if ((action.id == "org.freedesktop.systemd1.manage-units" ||
+         action.id == "org.freedesktop.systemd1.manage-unit-files") &&
+        action.lookup("unit") == "ngrok.service" &&
+        subject.user == "$NGROK_USER") {
+        return polkit.Result.YES;
+    }
+});
+EOF
+    echo "[ok] polkit rule written → $POLKIT_RULES_DIR/49-ngrok-nopasswd.rules"
+elif [[ -d "$POLKIT_PKLA_DIR" ]]; then
+    cat > "$POLKIT_PKLA_DIR/49-ngrok-nopasswd.pkla" << EOF
+[Allow $NGROK_USER to manage ngrok]
+Identity=unix-user:$NGROK_USER
+Action=org.freedesktop.systemd1.manage-units;org.freedesktop.systemd1.manage-unit-files
+ResultAny=yes
+ResultInactive=yes
+ResultActive=yes
+EOF
+    echo "[ok] polkit pkla written → $POLKIT_PKLA_DIR/49-ngrok-nopasswd.pkla"
+else
+    echo "[warn] polkit dir not found — add $NGROK_USER to 'sudo' group manually for service control"
+fi
+
 # ── 5. Patch neurovelis.service ───────────────────────────────────────────────
 
 if [[ -f "$NEUROVELIS_SERVICE" ]]; then
