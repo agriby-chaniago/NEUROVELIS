@@ -103,13 +103,16 @@
     <span id="scan-progress-label" class="scan-progress-label">0s / 20s</span>
   </div>
 
-  <div id="scan-qr-wrap" class="scan-qr-wrap" hidden>
-    <img id="scan-qr-image" class="scan-qr-image" alt="Scan QR code" />
-    <div class="scan-qr-meta">
-      <span id="scan-qr-countdown"></span>
-    </div>
-  </div>
 </section>
+
+<div id="qr-modal-overlay" class="qr-modal-overlay" role="dialog" aria-modal="true" aria-label="QR Code Scan">
+  <div class="qr-modal-box">
+    <div class="qr-modal-title">Scan QR Code</div>
+    <img id="scan-qr-image" class="qr-modal-image" alt="QR Code" />
+    <div class="qr-modal-hint">Arahkan kamera HP ke QR Code</div>
+    <div id="scan-qr-countdown" class="qr-modal-countdown"></div>
+  </div>
+</div>
 {% endblock %} {% block footer %}
 <footer>
   NEUROVELIS &mdash; Raspberry Pi 5 &mdash; <span id="footer-ts"></span>

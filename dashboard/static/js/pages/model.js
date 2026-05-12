@@ -684,9 +684,9 @@ function updateScanState(data) {
   const progressWrap = byId("scan-progress-wrap");
   const progressBar  = byId("scan-progress-bar");
   const progressLbl  = byId("scan-progress-label");
-  const qrWrap       = byId("scan-qr-wrap");
-  const qrImage      = byId("scan-qr-image");
-  const qrCountdown  = byId("scan-qr-countdown");
+  const qrOverlay   = byId("qr-modal-overlay");
+  const qrImage     = byId("scan-qr-image");
+  const qrCountdown = byId("scan-qr-countdown");
 
   if (badge) {
     badge.textContent = state.toUpperCase();
@@ -703,18 +703,20 @@ function updateScanState(data) {
     if (progressLbl) progressLbl.textContent = `${elapsed.toFixed(0)}s / ${Math.round(dur)}s`;
   }
 
-  // QR section: QR_DISPLAY only
-  if (qrWrap) qrWrap.hidden = state !== "qr_display";
-  if (state === "qr_display" && scanId) {
+  // QR modal: QR_DISPLAY only
+  const isQR = state === "qr_display";
+  if (qrOverlay) qrOverlay.classList.toggle("is-visible", isQR);
+  if (isQR && scanId) {
     if (scanId !== _scanLastId && qrImage) {
-      qrImage.src  = `/scan/qr_image/${scanId}?t=${Date.now()}`;
-      _scanLastId  = scanId;
+      qrImage.src = `/scan/qr_image/${scanId}?t=${Date.now()}`;
+      _scanLastId = scanId;
     }
     if (qrCountdown) {
       qrCountdown.textContent = remaining > 0 ? `Tersedia ${remaining.toFixed(0)}s` : "";
     }
-  } else if (state !== "qr_display") {
+  } else if (!isQR) {
     _scanLastId = null;   // allow reload on next QR_DISPLAY
+    if (qrImage) qrImage.src = "";
   }
 }
 
