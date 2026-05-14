@@ -17,29 +17,59 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, Tabl
 # FIX 7: only 1 PDF build at a time
 _pdf_semaphore = threading.Semaphore(1)
 
-SUMMARIES = {
-    "stress":     (
-        "Hasil deteksi menunjukkan indikasi stres. "
-        "Respons tubuh terhadap tekanan terdeteksi melalui variasi detak "
-        "jantung dan konduktansi kulit yang meningkat. Disarankan untuk "
-        "beristirahat dan mengurangi tekanan lingkungan."
-    ),
-    "anxiety":    (
-        "Hasil deteksi menunjukkan indikasi kecemasan. "
-        "Pola biometrik yang terdeteksi mencerminkan aktivasi sistem saraf "
-        "simpatik. Teknik relaksasi seperti pernapasan dalam dapat membantu."
-    ),
-    "depression": (
-        "Hasil deteksi menunjukkan indikasi depresi. "
-        "Parameter fisiologis menunjukkan pola aktivasi rendah yang konsisten. "
-        "Konsultasi dengan profesional kesehatan jiwa dianjurkan."
-    ),
-    "normal":     (
-        "Hasil deteksi menunjukkan kondisi dalam batas normal. "
-        "Parameter fisiologis berada dalam rentang yang diharapkan. "
-        "Tetap jaga pola hidup sehat dan istirahat yang cukup."
-    ),
+# Format per kondisi: list (threshold_pct, text)
+# Ambil bucket pertama dengan threshold >= confidence%
+SUMMARY_BUCKETS = {
+    "stress": [
+        (25,  "Terlihat sedikit kecenderungan respons stres selama pemeriksaan. "
+              "Perubahan biometrik masih dalam rentang ringan dan dapat dipengaruhi kondisi sementara."),
+        (50,  "Hasil biometrik menunjukkan kecenderungan respons stres ringan hingga sedang "
+              "selama pemeriksaan berlangsung."),
+        (75,  "Pola biometrik menunjukkan respons stres yang cukup konsisten selama pemeriksaan."),
+        (100, "Respons biometrik menunjukkan tingkat stres yang dominan selama pemeriksaan berlangsung."),
+    ],
+    "anxiety": [
+        (25,  "Terlihat sedikit peningkatan respons fisiologis selama pemeriksaan, "
+              "namun masih dalam tingkat ringan."),
+        (50,  "Pola biometrik menunjukkan kecenderungan ketegangan atau kecemasan ringan "
+              "selama pemeriksaan."),
+        (75,  "Respons biometrik menunjukkan pola kecemasan yang cukup konsisten selama pemeriksaan."),
+        (100, "Pola biometrik menunjukkan tingkat kecemasan yang dominan selama pemeriksaan."),
+    ],
+    "depression": [
+        (25,  "Aktivitas biometrik terlihat relatif tenang selama pemeriksaan dan "
+              "masih dapat dipengaruhi banyak faktor sementara."),
+        (50,  "Pola biometrik menunjukkan kecenderungan aktivitas fisiologis yang lebih rendah dari biasanya."),
+        (75,  "Hasil biometrik menunjukkan pola aktivitas fisiologis rendah yang cukup konsisten."),
+        (100, "Pola biometrik menunjukkan kecenderungan aktivitas fisiologis rendah yang dominan "
+              "selama pemeriksaan berlangsung."),
+    ],
+    "normal": [
+        (100, "Parameter fisiologis berada dalam rentang yang diharapkan selama pemeriksaan. "
+              "Tetap jaga pola hidup sehat dan istirahat yang cukup."),
+    ],
 }
+
+_DISCLAIMER = (
+    "Hasil ini merupakan interpretasi biometrik berbasis AI dan tidak menggantikan "
+    "evaluasi medis atau psikologis profesional."
+)
+
+
+def _safe_float(val, default=0.0):
+    try:
+        return float(val) if val is not None else default
+    except (TypeError, ValueError):
+        return default
+
+
+def get_summary(condition: str, confidence: float) -> str:
+    buckets = SUMMARY_BUCKETS.get(condition, SUMMARY_BUCKETS["normal"])
+    pct = confidence * 100
+    for threshold, text in buckets:
+        if pct <= threshold:
+            return text
+    return buckets[-1][1]
 
 
 def build_pdf(name: str, scan_data: dict) -> BytesIO:
@@ -76,14 +106,33 @@ def _build(name: str, scan_data: dict) -> BytesIO:
     def gap():
         story.append(Spacer(1, 0.5 * cm))
 
-    # FIX 8: None-safe reads throughout
     result   = scan_data.get("result") or {}
     dominant = result.get("dominant") or "normal"
-    conf     = float(result.get("confidence") or 0.0)
+    conf     = _safe_float(result.get("confidence"), 0.0)
     metrics  = result.get("metrics") or {}
     scores   = result.get("scores") or {}
 
-    h("Laporan Deteksi NeuroVelis AI")
+    # Konsisten dengan HTML: tidak tampilkan "normal" — gunakan kondisi tertinggi non-normal
+    non_normal = {
+        "stress":     _safe_float(scores.get("stress"), 0.0),
+        "anxiety":    _safe_float(scores.get("anxiety"), 0.0),
+        "depression": _safe_float(scores.get("depression"), 0.0),
+    }
+    overridden = dominant == "normal"
+    if overridden:
+        display_dominant   = max(non_normal, key=non_normal.get)
+        display_confidence = non_normal[display_dominant]
+    else:
+        display_dominant   = dominant
+        display_confidence = conf
+
+    hr_val   = int(_safe_float(metrics.get("hr"), 0))
+    gsr_lv   = metrics.get("gsr_level") or "-"
+    gsr_str  = f"{_safe_float(metrics.get('gsr_value'), 0.0):.2f}"
+    spo2_val = _safe_float(metrics.get("spo2"), 0.0)
+    temp_val = _safe_float(metrics.get("temperature"), 0.0)
+
+    h("Laporan Hasil Pemeriksaan NeuroVelis AI")
     gap()
 
     h("Identitas", "Heading2")
@@ -92,17 +141,11 @@ def _build(name: str, scan_data: dict) -> BytesIO:
     p(f"<b>Waktu Scan:</b> {scan_data.get('timestamp_end', '-')}")
     gap()
 
-    h("Hasil Deteksi", "Heading2")
-    p(f"<b>Kondisi Dominan:</b> {dominant.title()}")
-    p(f"<b>Confidence:</b> {conf * 100:.1f}%")
+    section_title = "Kecenderungan Dominan" if overridden else "Hasil Deteksi"
+    h(section_title, "Heading2")
+    p(f"<b>Kondisi:</b> {display_dominant.title()}")
+    p(f"<b>Confidence:</b> {display_confidence * 100:.1f}%")
     gap()
-
-    hr_val       = metrics.get("hr") or 0
-    gsr_lv       = metrics.get("gsr_level") or "-"
-    gsr_raw      = metrics.get("gsr_value")
-    gsr_str      = f"{float(gsr_raw):.2f}" if gsr_raw is not None else "-"
-    spo2_val = metrics.get("spo2") or 0
-    temp_val = metrics.get("temperature") or 0
 
     h("Parameter Biometrik", "Heading2")
     _table(story, [
@@ -119,18 +162,15 @@ def _build(name: str, scan_data: dict) -> BytesIO:
     h("Distribusi Skor Kelas", "Heading2")
     _table(story, [
         ["Kondisi",    "Skor"],
-        ["Stres",      f"{float(scores.get('stress') or 0) * 100:.1f}%"],
-        ["Kecemasan",  f"{float(scores.get('anxiety') or 0) * 100:.1f}%"],
-        ["Depresi",    f"{float(scores.get('depression') or 0) * 100:.1f}%"],
+        ["Stres",      f"{non_normal['stress'] * 100:.1f}%"],
+        ["Anxiety",    f"{non_normal['anxiety'] * 100:.1f}%"],
+        ["Depresi",    f"{non_normal['depression'] * 100:.1f}%"],
     ])
     gap()
 
     h("Ringkasan", "Heading2")
-    p(SUMMARIES.get(dominant, SUMMARIES["normal"]))
-    p(
-        "<i>Catatan: Hasil ini bersifat informatif dan tidak menggantikan "
-        "diagnosis klinis oleh profesional kesehatan jiwa.</i>"
-    )
+    p(get_summary(display_dominant, display_confidence))
+    p(f"<i>{_DISCLAIMER}</i>")
 
     doc.build(story)
     buf.seek(0)

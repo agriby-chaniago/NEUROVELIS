@@ -33,6 +33,7 @@ import json
 import logging
 import shutil
 import time
+from types import SimpleNamespace
 from typing import Optional
 
 from flask import (
@@ -43,6 +44,13 @@ from flask import (
 import config
 
 logger = logging.getLogger(__name__)
+
+
+def _safe_float(val, default=0.0):
+    try:
+        return float(val) if val is not None else default
+    except (TypeError, ValueError):
+        return default
 
 # Injected by main.py after startup
 _sensor_manager    = None
@@ -318,25 +326,47 @@ def create_app(
         if scan_data is None:
             return render_template("pages/report.html", error="Data scan tidak ditemukan."), 404
 
-        result  = scan_data.get("result", {})
-        metrics = result.get("metrics", {})
-        scores  = result.get("scores", {})
+        from dashboard.report_pdf import get_summary
+
+        result  = scan_data.get("result") or {}
+        metrics = result.get("metrics") or {}
+        scores  = result.get("scores") or {}
+
+        dominant   = result.get("dominant") or "normal"
+        confidence = _safe_float(result.get("confidence"), 0.0)
+
+        non_normal = {
+            "stress":     _safe_float(scores.get("stress"), 0.0),
+            "anxiety":    _safe_float(scores.get("anxiety"), 0.0),
+            "depression": _safe_float(scores.get("depression"), 0.0),
+        }
+        overridden = dominant == "normal"
+        if overridden:
+            display_dominant   = max(non_normal, key=non_normal.get)
+            display_confidence = non_normal[display_dominant]
+        else:
+            display_dominant   = dominant
+            display_confidence = confidence
 
         return render_template(
             "pages/report.html",
             error=None,
             scan_id=scan_id,
             token=token,
-            dominant=result.get("dominant", "normal"),
-            confidence=float(result.get("confidence") or 0),
-            hr=metrics.get("hr", 0),
-            gsr_level=metrics.get("gsr_level", "-"),
-            gsr_value=float(metrics.get("gsr_value") or 0),
-            scores=type("S", (), {
-                "stress":     float(scores.get("stress") or 0),
-                "anxiety":    float(scores.get("anxiety") or 0),
-                "depression": float(scores.get("depression") or 0),
-            })(),
+            dominant=display_dominant,
+            confidence=display_confidence,
+            overridden=overridden,
+            summary=get_summary(display_dominant, display_confidence),
+            hr=_safe_float(metrics.get("hr"), 0.0),
+            gsr_level=metrics.get("gsr_level") or "-",
+            gsr_value=_safe_float(metrics.get("gsr_value"), 0.0),
+            spo2=_safe_float(metrics.get("spo2"), 0.0),
+            temperature=_safe_float(metrics.get("temperature"), 0.0),
+            scores=SimpleNamespace(
+                stress=non_normal["stress"],
+                anxiety=non_normal["anxiety"],
+                depression=non_normal["depression"],
+            ),
             timestamp=scan_data.get("timestamp_end", "-"),
         )
 
@@ -365,7 +395,10 @@ def create_app(
         try:
             buf = build_pdf(name, scan_data)
         except RuntimeError:
-            return jsonify({"error": "Server busy, please retry"}), 429   # FIX 16
+            return jsonify({"error": "Server busy, please retry"}), 429
+        except Exception as exc:
+            logger.error("report_generate: PDF build failed scan_id=%s: %s", scan_id, exc)
+            return jsonify({"error": "Gagal membuat PDF"}), 500
 
         filename = f"neurovelis_{scan_id[:8]}.pdf"
         return send_file(

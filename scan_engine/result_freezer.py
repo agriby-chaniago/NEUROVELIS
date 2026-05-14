@@ -176,8 +176,11 @@ class ResultFreezer:
         path = os.path.join(SCANS_DIR, f"{scan_id}.json")
         if not os.path.exists(path):
             return None
-        with open(path, encoding="utf-8") as f:
-            return json.load(f)
+        try:
+            with open(path, encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError):
+            return None
 
     def verify_token(self, scan_id: str, token: str) -> bool:
         data = self.load(scan_id)

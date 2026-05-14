@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Laporan NeuroVELIS</title>
+  <title>Laporan NeuroVelis AI</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -95,6 +95,11 @@
     .badge-depression { background: #fce4e4; color: #b71c1c; border: 1px solid #f0b3b3; }
     .badge-normal     { background: #e6f4ec; color: #1e7845; border: 1px solid #9ed4b6; }
 
+    .badge-low {
+      opacity: 0.65;
+      filter: saturate(0.6);
+    }
+
     .result-conf {
       font-size: 0.75rem;
       color: var(--muted);
@@ -144,7 +149,7 @@
     /* Metrics grid */
     .metrics-grid {
       display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
+      grid-template-columns: 1fr 1fr 1fr 1fr;
       gap: 0.6rem;
     }
 
@@ -156,18 +161,33 @@
     }
 
     .metric-val {
-      font-size: 1.2rem;
+      font-size: 1.1rem;
       font-weight: 700;
       line-height: 1;
       color: var(--accent);
     }
 
     .metric-lbl {
-      font-size: 0.6rem;
+      font-size: 0.58rem;
       color: var(--muted);
       text-transform: uppercase;
       letter-spacing: 0.05em;
       margin-top: 0.2rem;
+    }
+
+    /* Summary */
+    .summary-text {
+      font-size: 0.82rem;
+      line-height: 1.7;
+      color: var(--text);
+    }
+
+    .disclaimer {
+      font-size: 0.72rem;
+      color: var(--muted);
+      font-style: italic;
+      margin-top: 0.6rem;
+      line-height: 1.5;
     }
 
     /* Form */
@@ -234,26 +254,21 @@
     .error-card h2 { font-size: 1rem; margin-bottom: 0.5rem; }
     .error-card p  { font-size: 0.8rem; opacity: 0.8; }
 
-    /* Disclaimer */
-    .disclaimer {
+    /* Footer */
+    .footer {
       text-align: center;
       font-size: 0.62rem;
       color: var(--muted);
       padding: 0.5rem 0 1.5rem;
       line-height: 1.5;
     }
-
-    /* Loading overlay on submit */
-    .btn-submit.loading::after {
-      content: " ⏳";
-    }
   </style>
 </head>
 <body>
 <div class="container">
   <div class="header">
-    <h1>NeuroVELIS</h1>
-    <p>Laporan Deteksi Biometrik</p>
+    <h1>NeuroVelis AI</h1>
+    <p>Laporan Hasil Pemeriksaan Biometrik</p>
   </div>
 
   {% if error %}
@@ -265,10 +280,10 @@
   {% else %}
   <!-- Result summary -->
   <div class="card">
-    <div class="card-title">Hasil Deteksi</div>
+    <div class="card-title">{% if overridden %}Kecenderungan Dominan{% else %}Hasil Deteksi{% endif %}</div>
 
     <div class="result-dominant">
-      <span class="result-badge badge-{{ dominant }}">{{ dominant|title }}</span>
+      <span class="result-badge badge-{{ dominant }}{% if confidence < 0.5 %} badge-low{% endif %}">{{ dominant|title }}</span>
       <span class="result-conf">Confidence: {{ "%.1f"|format(confidence * 100) }}%</span>
     </div>
 
@@ -280,7 +295,7 @@
       <span class="score-pct">{{ "%.1f"|format(scores.stress * 100) }}%</span>
     </div>
     <div class="score-row score-anxiety">
-      <span class="score-label">Kecemasan</span>
+      <span class="score-label">Anxiety</span>
       <div class="score-bar-track">
         <div class="score-bar-fill" style="width: {{ "%.0f"|format(scores.anxiety * 100) }}%"></div>
       </div>
@@ -300,8 +315,12 @@
     <div class="card-title">Parameter Biometrik</div>
     <div class="metrics-grid">
       <div class="metric">
-        <div class="metric-val">{{ hr }}</div>
+        <div class="metric-val">{{ hr|int }}</div>
         <div class="metric-lbl">Heart Rate</div>
+      </div>
+      <div class="metric">
+        <div class="metric-val">{{ "%.0f"|format(spo2) }}%</div>
+        <div class="metric-lbl">SpO2</div>
       </div>
       <div class="metric">
         <div class="metric-val">{{ gsr_level }}</div>
@@ -314,6 +333,13 @@
     </div>
   </div>
 
+  <!-- Summary -->
+  <div class="card">
+    <div class="card-title">Ringkasan</div>
+    <p class="summary-text">{{ summary }}</p>
+    <p class="disclaimer">{{ "Hasil ini merupakan interpretasi biometrik berbasis AI dan tidak menggantikan evaluasi medis atau psikologis profesional." }}</p>
+  </div>
+
   <!-- Name form → download PDF -->
   <div class="card">
     <div class="card-title">Unduh Laporan PDF</div>
@@ -324,17 +350,17 @@
       <input class="form-input" type="text" id="name" name="name"
              placeholder="Masukkan nama Anda"
              required maxlength="120" autocomplete="name" />
-      <p class="form-hint">Nama akan tercantum di laporan PDF.</p>
+      <p class="form-hint">Isi nama lengkap Anda untuk mengunduh laporan PDF.</p>
       <button class="btn-submit" type="submit" id="submit-btn">
         Unduh PDF
       </button>
     </form>
   </div>
 
-  <p class="disclaimer">
+  <p class="footer">
     Scan ID: {{ scan_id[:8] }}... &bull;
     {{ timestamp }}<br>
-    Hasil ini bersifat informatif — bukan pengganti diagnosis klinis.
+    Hasil bersifat informatif — bukan pengganti diagnosis klinis.
   </p>
   {% endif %}
 </div>
@@ -343,10 +369,34 @@
   const form = document.getElementById("report-form");
   const btn  = document.getElementById("submit-btn");
   if (form && btn) {
-    form.addEventListener("submit", () => {
+    form.addEventListener("submit", async (e) => {
+      if (btn.disabled) return;
+      e.preventDefault();
       btn.disabled = true;
-      btn.classList.add("loading");
       btn.textContent = "Membuat PDF...";
+      try {
+        const resp = await fetch(form.action, { method: "POST", body: new FormData(form) });
+        if (!resp.ok) {
+          const data = await resp.json().catch(() => ({}));
+          btn.disabled = false;
+          btn.textContent = "Unduh PDF";
+          alert(data.error || "Gagal membuat PDF. Coba lagi.");
+          return;
+        }
+        const blob = await resp.blob();
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement("a");
+        a.href     = url;
+        a.download = "neurovelis_report.pdf";
+        a.click();
+        URL.revokeObjectURL(url);
+        btn.textContent = "Unduh PDF";
+        btn.disabled = false;
+      } catch {
+        btn.disabled = false;
+        btn.textContent = "Unduh PDF";
+        alert("Koneksi gagal. Coba lagi.");
+      }
     });
   }
 </script>
