@@ -59,6 +59,9 @@ mirror_horizontal = bool(getattr(config, "CAMERA_MIRROR_HORIZONTAL", True))
 af_refocus_interval_s = float(getattr(config, "CAMERA_AF_REFOCUS_INTERVAL_S", 2.0))
 if af_refocus_interval_s < 0.0:
     af_refocus_interval_s = 0.0
+fixed_exposure_us = int(getattr(config, "CAMERA_FIXED_EXPOSURE_US", 0))
+analogue_gain     = float(getattr(config, "CAMERA_ANALOGUE_GAIN", 2.0))
+noise_reduction   = int(getattr(config, "CAMERA_NOISE_REDUCTION_MODE", 1))
 
 
 def _camera_control_names(cam):
@@ -96,17 +99,22 @@ if requested_idx < 0 or requested_idx >= len(available):
     )
 
 picam2 = Picamera2(requested_idx)
+_init_controls = {
+    "FrameDurationLimits": (frame_us, frame_us),
+    "AwbEnable":           True,
+    "AeEnable":            fixed_exposure_us <= 0,
+    "Sharpness":           sharpness,
+    "Brightness":          brightness,
+    "NoiseReductionMode":  noise_reduction,
+}
+if fixed_exposure_us > 0:
+    _init_controls["ExposureTime"] = fixed_exposure_us
+    _init_controls["AnalogueGain"] = analogue_gain
 video_config = picam2.create_video_configuration(
     # Sensor mode is locked by main stream resolution.
     # Keep this at 1920x1080 for OV64A40 high-speed 60fps mode.
     main={"size": (capture_width, capture_height), "format": "RGB888"},
-    controls={
-        "FrameDurationLimits": (frame_us, frame_us),
-        "AwbEnable": True,
-        "AeEnable": True,
-        "Sharpness": sharpness,
-        "Brightness": brightness,
-    },
+    controls=_init_controls,
 )
 picam2.configure(video_config)
 picam2.start()

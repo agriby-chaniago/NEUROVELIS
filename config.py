@@ -274,8 +274,9 @@ CAMERA_SWAP_RB       = True
 # Set CAMERA_FIXED_EXPOSURE_US > 0 to disable auto-exposure (prevents luminance
 # flicker between frames, critical for micro-expression temporal features).
 # Example: 16000 ≈ 1/62.5 s shutter at 60 fps.  0 = leave AE enabled (default).
-CAMERA_FIXED_EXPOSURE_US = 0       # microseconds; 0 = AE enabled
+CAMERA_FIXED_EXPOSURE_US = 16000   # microseconds; 0 = AE enabled. 16000 ≈ 1/62.5s @ 60fps
 CAMERA_ANALOGUE_GAIN     = 2.0     # analogue gain when fixed-exposure is active
+CAMERA_NOISE_REDUCTION_MODE = 2    # 0=off, 1=fast, 2=HighQuality (ISP NR)
 
 # ─── Experiment Settings ───────────────────────────────────────────────────
 # All experiment data is saved under DATA_DIR/sessions/{session_id}/
