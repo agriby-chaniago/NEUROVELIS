@@ -341,6 +341,9 @@ MODEL_SENSOR_TOUCH_OFF_HITS = 2
 MODEL_CLASS_WARMUP_S = 4.0
 MODEL_CLASS_WARMUP_MIN_S = 3.0
 MODEL_CLASS_WARMUP_MAX_S = 5.0
+# Warmup restarts only if finger was absent at least this long (genuine removal).
+# Short glitches under this threshold skip warmup once it completed once.
+MODEL_WARMUP_RESTART_AFTER_AWAY_S = 30.0
 
 # Final class order for the dashboard and API responses.
 MODEL_CLASSES = ["normal", "anxiety", "stress", "depression"]

@@ -60,9 +60,11 @@ class ModelInferenceService:
         self._sensor_touch_prev = False
         self._sensor_touch_missing_since: Optional[float] = None
         self._sensor_touch_paused = False
+        self._sensor_touch_paused_at: Optional[float] = None
         self._sensor_touch_present_hits = 0
         self._sensor_touch_absent_hits = 0
         self._class_warmup_until = 0.0
+        self._warmup_completed = False
         self._stable_window: deque = deque()
         self._stable_window_label: Optional[str] = None
         self._stable_last_reset_reason = "SERVICE_INIT"
@@ -539,9 +541,21 @@ class ModelInferenceService:
         if touched:
             self._sensor_touch_missing_since = None
             if self._sensor_touch_paused or not self._sensor_touch_prev:
+                absent_s = (
+                    (now - self._sensor_touch_paused_at)
+                    if self._sensor_touch_paused_at is not None
+                    else float("inf")
+                )
+                restart_after = max(
+                    0.0,
+                    float(getattr(config, "MODEL_WARMUP_RESTART_AFTER_AWAY_S", 30.0)),
+                )
+                should_restart_warmup = not self._warmup_completed or absent_s >= restart_after
                 self._sensor_touch_paused = False
+                self._sensor_touch_paused_at = None
                 self._smoothed_probs = None
-                self._class_warmup_until = now + warmup_s
+                if should_restart_warmup:
+                    self._class_warmup_until = now + warmup_s
             self._sensor_touch_prev = True
             return
 
@@ -549,6 +563,8 @@ class ModelInferenceService:
             self._sensor_touch_missing_since = now
 
         if (now - self._sensor_touch_missing_since) >= grace_s:
+            if not self._sensor_touch_paused:
+                self._sensor_touch_paused_at = now
             self._sensor_touch_paused = True
             self._smoothed_probs = None
         self._sensor_touch_prev = False
@@ -658,6 +674,7 @@ class ModelInferenceService:
         elif label in config.MODEL_CLASSES:
             state = "RUNNING"
             runtime_reason = "LIVE"
+            self._warmup_completed = True
         elif reason.startswith("SERVICE_INIT"):
             state = "INIT"
             runtime_reason = reason
