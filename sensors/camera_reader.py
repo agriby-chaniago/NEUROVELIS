@@ -555,11 +555,17 @@ class CameraReader:
                     _fps_t0     = time.monotonic()
 
         finally:
-            # Send poison pill and wait briefly for encode thread
+            # Drain pending frames so the sentinel always fits (maxsize=2).
+            # Discarding frames on shutdown is safe — they will never be displayed.
+            while True:
+                try:
+                    _enc_q.get_nowait()
+                except queue.Empty:
+                    break
             try:
-                _enc_q.put_nowait(None)
-            except Exception:
-                pass
+                _enc_q.put(None, timeout=2.0)  # blocking — sentinel must reach thread
+            except queue.Full:
+                logger.error("CameraReader: could not send encode-thread sentinel — thread may linger")
             self._cam = None
             cam.stop()
             cam.close()

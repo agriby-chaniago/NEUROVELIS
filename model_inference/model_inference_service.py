@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections import deque
 import logging
-import random
 import threading
 import time
 from datetime import datetime, timezone
@@ -15,6 +14,9 @@ import numpy as np
 import config
 from model_inference.model_adapter import ModelAdapter, _unknown_payload
 from model_inference.visual_feature_extractor import VisualFeatureExtractor
+from model_inference.smoother import _Smoother
+from model_inference.warmup_gate import _WarmupGate
+from model_inference.stability_tracker import _StabilityTracker
 
 try:
     import neurokit2 as nk  # type: ignore
@@ -54,20 +56,11 @@ class ModelInferenceService:
         self._lock = threading.Lock()
         self._history: deque = deque()
         self._prev_frame: Optional[bytes] = None  # kept for compatibility; unused after fix
-        self._smoothed_probs: Optional[dict[str, float]] = None
         self._last_feature_vector: Optional[dict[str, float]] = None
         self._last_feature_timestamp_utc: Optional[str] = None
-        self._sensor_touch_prev = False
-        self._sensor_touch_missing_since: Optional[float] = None
-        self._sensor_touch_paused = False
-        self._sensor_touch_paused_at: Optional[float] = None
-        self._sensor_touch_present_hits = 0
-        self._sensor_touch_absent_hits = 0
-        self._class_warmup_until = 0.0
-        self._warmup_completed = False
-        self._stable_window: deque = deque()
-        self._stable_window_label: Optional[str] = None
-        self._stable_last_reset_reason = "SERVICE_INIT"
+        self._smoother = _Smoother()
+        self._warmup_gate = _WarmupGate()
+        self._stability = _StabilityTracker()
         self._latest: dict = {
             "model_label_top1": "unknown",
             "model_confidence_top1": None,
@@ -173,8 +166,7 @@ class ModelInferenceService:
         with self._lock:
             latest = dict(self._latest)
             fv = dict(self._last_feature_vector) if self._last_feature_vector else None
-            stable_reset_reason = self._stable_last_reset_reason
-            stable_window_points = len(self._stable_window)
+        stable_reset_reason, stable_window_points = self._stability.snapshot()
         return {
             "latest": latest,
             "feature_vector": fv,
@@ -188,128 +180,8 @@ class ModelInferenceService:
             },
         }
 
-    @staticmethod
-    def _sensor_valid_for_stability(sensor_data: dict) -> bool:
-        if bool(sensor_data.get("sensor_stale")):
-            return False
-        if not bool(sensor_data.get("hr_valid")):
-            return False
-        if not bool(sensor_data.get("spo2_valid")):
-            return False
-        required_keys = ["heart_rate_bpm", "spo2_percent", "gsr_conductance_us"]
-        for key in required_keys:
-            if sensor_data.get(key) is None:
-                return False
-        return True
-
-    def _reset_stable_window(self, reason: str) -> None:
-        self._stable_window.clear()
-        self._stable_window_label = None
-        self._stable_last_reset_reason = reason
-
-    def _compute_variance_gate(self, label: str) -> tuple[bool, dict[str, float]]:
-        confidence_values: list[float] = []
-        label_prob_values: list[float] = []
-
-        for row in self._stable_window:
-            try:
-                conf = float(row.get("confidence"))
-                if np.isfinite(conf):
-                    confidence_values.append(conf)
-            except (TypeError, ValueError):
-                pass
-
-            probs = row.get("probs") or {}
-            try:
-                label_prob = float(probs.get(label, 0.0))
-                if np.isfinite(label_prob):
-                    label_prob_values.append(label_prob)
-            except (TypeError, ValueError):
-                pass
-
-        conf_var = float(np.var(confidence_values)) if len(confidence_values) >= 2 else 0.0
-        label_prob_var = float(np.var(label_prob_values)) if len(label_prob_values) >= 2 else 0.0
-        variance_stats = {
-            "confidence_variance": round(conf_var, 8),
-            "label_prob_variance": round(label_prob_var, 8),
-        }
-
-        variance_enabled = bool(getattr(config, "MODEL_STABLE_VARIANCE_ENABLED", False))
-        if not variance_enabled:
-            return True, variance_stats
-
-        conf_max = max(0.0, float(getattr(config, "MODEL_STABLE_CONFIDENCE_VAR_MAX", 0.0025)))
-        label_prob_max = max(0.0, float(getattr(config, "MODEL_STABLE_LABEL_PROB_VAR_MAX", 0.0025)))
-        variance_ok = conf_var <= conf_max and label_prob_var <= label_prob_max
-        return variance_ok, variance_stats
-
     def _update_stability_tracker(self, result: dict, sensor_data: dict, now: float) -> dict:
-        out = dict(result)
-        stable_window_s = max(1.0, float(getattr(config, "MODEL_STABLE_RUN_SECONDS", 30.0)))
-        runtime_state = str(out.get("model_runtime_state") or "").upper()
-        label = str(out.get("model_label_top1") or "").lower()
-
-        with self._lock:
-            elapsed = 0.0
-            variance_ok = False
-            ready = False
-
-            if runtime_state != "RUNNING":
-                self._reset_stable_window("RUNTIME_NOT_RUNNING")
-            elif label not in {"anxiety", "stress", "depression"}:
-                self._reset_stable_window("LABEL_NOT_ELIGIBLE")
-            elif not self._sensor_valid_for_stability(sensor_data=sensor_data):
-                self._reset_stable_window("SENSOR_MISSING_OR_INVALID")
-            else:
-                if self._stable_window_label is not None and label != self._stable_window_label:
-                    self._reset_stable_window("LABEL_CHANGED")
-
-                if self._stable_window_label is None:
-                    self._stable_window_label = label
-                self._stable_last_reset_reason = "TRACKING"
-
-                self._stable_window.append(
-                    {
-                        "t": float(now),
-                        "confidence": out.get("model_confidence_top1"),
-                        "probs": {
-                            "normal": out.get("model_probs_normal"),
-                            "anxiety": out.get("model_probs_anxiety"),
-                            "stress": out.get("model_probs_stress"),
-                            "depression": out.get("model_probs_depression"),
-                        },
-                        "chances": {
-                            "normal": out.get("model_chance_normal"),
-                            "anxiety": out.get("model_chance_anxiety"),
-                            "stress": out.get("model_chance_stress"),
-                            "depression": out.get("model_chance_depression"),
-                        },
-                        "heart_rate_bpm": sensor_data.get("heart_rate_bpm"),
-                        "spo2_percent": sensor_data.get("spo2_percent"),
-                        "gsr_conductance_us": sensor_data.get("gsr_conductance_us"),
-                        "temperature_celsius": sensor_data.get("temperature_celsius"),
-                    }
-                )
-
-                cutoff = float(now) - stable_window_s
-                while self._stable_window and float(self._stable_window[0]["t"]) < cutoff:
-                    self._stable_window.popleft()
-
-                if self._stable_window:
-                    elapsed = max(
-                        0.0,
-                        float(self._stable_window[-1]["t"]) - float(self._stable_window[0]["t"]),
-                    )
-
-                variance_ok, variance_stats = self._compute_variance_gate(label=label)
-                ready = elapsed >= stable_window_s and variance_ok
-
-            out["model_stable_window_s"] = round(stable_window_s, 2)
-            out["model_stable_elapsed_s"] = round(elapsed, 2)
-            out["model_stable_ready"] = bool(ready)
-            out["model_stable_variance_ok"] = bool(variance_ok)
-            out["model_stable_reset_reason"] = self._stable_last_reset_reason
-        return out
+        return self._stability.update(result, sensor_data, now)
 
     def _loop(self):
         interval = max(0.1, float(config.MODEL_INFERENCE_INTERVAL_S))
@@ -371,14 +243,15 @@ class ModelInferenceService:
                 visual_features=visual_features,
             )
 
-            self._update_sensor_touch_state(sensor_data=sensor_data, now=start)
+            if self._warmup_gate.update(sensor_data=sensor_data, now=start):
+                self._smoother.reset()
             if start >= next_inference_at:
-                if self._sensor_touch_paused:
+                if self._warmup_gate.is_paused:
                     result = _unknown_payload(reason="SENSOR_NOT_TOUCHED_PAUSED")
                     result["model_latency_ms"] = 0
                     result["model_pipeline_latency_ms"] = 0
                     result["model_loop_latency_ms"] = 0
-                    result = self._annotate_runtime_state(result=result, now=start)
+                    result = self._warmup_gate.annotate_runtime(result, start)
                     result["model_face_detected"] = face_detected
                     result["model_face_count"]    = int(visual_features.get("face_count", 0))
                     result["model_face_landmarks"] = landmarks_norm
@@ -390,20 +263,19 @@ class ModelInferenceService:
                         now=start,
                     )
 
+                    publish_result = dict(result)
+                    publish_result.pop("model_face_landmarks", None)
                     with self._lock:
                         self._last_feature_vector = None
                         self._last_feature_timestamp_utc = None
                         self._latest = dict(result)
+                        self._sensor_manager.set_model_inference(publish_result)
 
                     with self._result_cond:
                         self._result_seq += 1
                         self._result_cond.notify_all()
 
-                    publish_result = dict(result)
-                    publish_result.pop("model_face_landmarks", None)
-                    self._sensor_manager.set_model_inference(publish_result)
                     next_inference_at = start + interval
-
                     elapsed = time.monotonic() - start
                     self._stop_event.wait(timeout=max(0.0, visual_interval - elapsed))
                     continue
@@ -444,13 +316,13 @@ class ModelInferenceService:
                 result["model_pipeline_latency_ms"] = pipeline_latency_ms
                 result["model_loop_latency_ms"] = loop_latency_ms
 
-                result = self._apply_smoothing(result)
-                result = self._apply_class_warmup_gate(result=result, now=start)
+                result = self._smoother.apply(result)
+                result = self._warmup_gate.apply_gate(result, start)
                 result["model_face_detected"] = face_detected
                 result["model_face_count"]    = int(visual_features.get("face_count", 0))
                 result["model_face_landmarks"] = landmarks_norm
                 result["model_face_backend"] = _vfe_backend
-                result = self._annotate_runtime_state(result=result, now=start)
+                result = self._warmup_gate.annotate_runtime(result, start)
 
                 result["model_timestamp_utc"] = datetime.now(timezone.utc).isoformat()
                 result = self._update_stability_tracker(
@@ -459,17 +331,22 @@ class ModelInferenceService:
                     now=start,
                 )
 
+                # Build publish snapshot before acquiring lock (landmarks removed for
+                # sensor snapshot — too large for CSV/SSE consumers).
+                publish_result = dict(result)
+                publish_result.pop("model_face_landmarks", None)
+
                 with self._lock:
                     self._latest = dict(result)
+                    # Publish under the same lock so dashboard consumers reading
+                    # _latest and sensor snapshot always see a consistent frame.
+                    # set_model_inference() only acquires sensor_manager._lock (no
+                    # callback / SSE path) — no deadlock risk.
+                    self._sensor_manager.set_model_inference(publish_result)
 
                 with self._result_cond:
                     self._result_seq += 1
                     self._result_cond.notify_all()
-
-                # Publish inference into shared sensor snapshot for dashboard/SSE/CSV.
-                publish_result = dict(result)
-                publish_result.pop("model_face_landmarks", None)
-                self._sensor_manager.set_model_inference(publish_result)
                 next_inference_at = start + interval
 
             # When camera is available, wait_new_frame at top already paces the loop.
@@ -477,216 +354,6 @@ class ModelInferenceService:
             if self._camera_reader is None:
                 elapsed = time.monotonic() - start
                 self._stop_event.wait(timeout=max(0.0, visual_interval - elapsed))
-
-    @staticmethod
-    def _is_sensor_touched(sensor_data: dict) -> bool:
-        """Heuristic for active sensor touch (finger/contact present)."""
-        hr_valid = bool(sensor_data.get("hr_valid"))
-        spo2_valid = bool(sensor_data.get("spo2_valid"))
-
-        hr = sensor_data.get("heart_rate_bpm")
-        spo2 = sensor_data.get("spo2_percent")
-        gsr = sensor_data.get("gsr_conductance_us")
-
-        try:
-            hr_val = float(hr)
-        except (TypeError, ValueError):
-            hr_val = None
-        try:
-            spo2_val = float(spo2)
-        except (TypeError, ValueError):
-            spo2_val = None
-        try:
-            gsr_val = float(gsr)
-        except (TypeError, ValueError):
-            gsr_val = None
-
-        # Require valid HR+SpO2 with plausible ranges and non-null GSR.
-        # This avoids false touch detection from one noisy/stale metric alone.
-        hr_ok = hr_valid and hr_val is not None and 40.0 <= hr_val <= 160.0
-        spo2_ok = spo2_valid and spo2_val is not None and 70.0 <= spo2_val <= 100.0
-        gsr_ok = gsr_val is not None and gsr_val >= 0.0
-        return hr_ok and spo2_ok and gsr_ok
-
-    def _is_sensor_touched_debounced(self, sensor_data: dict) -> bool:
-        """Debounce touch state so a transient spike doesn't trigger warmup."""
-        raw_touched = self._is_sensor_touched(sensor_data)
-        on_hits = max(1, int(getattr(config, "MODEL_SENSOR_TOUCH_ON_HITS", 2)))
-        off_hits = max(1, int(getattr(config, "MODEL_SENSOR_TOUCH_OFF_HITS", 2)))
-
-        if raw_touched:
-            self._sensor_touch_present_hits += 1
-            self._sensor_touch_absent_hits = 0
-        else:
-            self._sensor_touch_absent_hits += 1
-            self._sensor_touch_present_hits = 0
-
-        if self._sensor_touch_prev:
-            if raw_touched:
-                return True
-            return self._sensor_touch_absent_hits < off_hits
-
-        if not raw_touched:
-            return False
-        return self._sensor_touch_present_hits >= on_hits
-
-    def _update_sensor_touch_state(self, sensor_data: dict, now: float) -> None:
-        touched = self._is_sensor_touched_debounced(sensor_data)
-        grace_s = max(1.0, min(3.0, float(getattr(config, "MODEL_SENSOR_TOUCH_GRACE_S", 2.0))))
-        warmup_default = max(0.0, float(getattr(config, "MODEL_CLASS_WARMUP_S", 4.0)))
-        warmup_min = max(0.0, float(getattr(config, "MODEL_CLASS_WARMUP_MIN_S", warmup_default)))
-        warmup_max = max(warmup_min, float(getattr(config, "MODEL_CLASS_WARMUP_MAX_S", warmup_default)))
-        warmup_s = random.uniform(warmup_min, warmup_max)
-
-        if touched:
-            self._sensor_touch_missing_since = None
-            if self._sensor_touch_paused or not self._sensor_touch_prev:
-                absent_s = (
-                    (now - self._sensor_touch_paused_at)
-                    if self._sensor_touch_paused_at is not None
-                    else float("inf")
-                )
-                restart_after = max(
-                    0.0,
-                    float(getattr(config, "MODEL_WARMUP_RESTART_AFTER_AWAY_S", 30.0)),
-                )
-                should_restart_warmup = not self._warmup_completed or absent_s >= restart_after
-                self._sensor_touch_paused = False
-                self._sensor_touch_paused_at = None
-                self._smoothed_probs = None
-                if should_restart_warmup:
-                    self._class_warmup_until = now + warmup_s
-            self._sensor_touch_prev = True
-            return
-
-        if self._sensor_touch_missing_since is None:
-            self._sensor_touch_missing_since = now
-
-        if (now - self._sensor_touch_missing_since) >= grace_s:
-            if not self._sensor_touch_paused:
-                self._sensor_touch_paused_at = now
-            self._sensor_touch_paused = True
-            self._smoothed_probs = None
-        self._sensor_touch_prev = False
-
-    def _apply_class_warmup_gate(self, result: dict, now: float) -> dict:
-        """Hold class output briefly after touch/start so model can stabilize."""
-        if now >= self._class_warmup_until:
-            return result
-
-        label = result.get("model_label_top1")
-        if label not in config.MODEL_CLASSES:
-            return result
-
-        remaining = max(0.0, self._class_warmup_until - now)
-        warmed = dict(result)
-        warmed["model_label_top1"] = "unknown"
-        warmed["model_confidence_top1"] = None
-        warmed["model_probs_normal"] = 0.0
-        warmed["model_probs_anxiety"] = 0.0
-        warmed["model_probs_stress"] = 0.0
-        warmed["model_probs_depression"] = 0.0
-        warmed["model_chance_normal"] = 0.0
-        warmed["model_chance_anxiety"] = 0.0
-        warmed["model_chance_stress"] = 0.0
-        warmed["model_chance_depression"] = 0.0
-        warmed["model_alert_active"] = False
-        warmed["model_alert_reasons"] = f"CLASS_WARMUP:{round(remaining, 1)}s"
-        return warmed
-
-    def _apply_smoothing(self, result: dict) -> dict:
-        """EMA smoothing on class probabilities to reduce UI flicker."""
-        exclude_normal = bool(getattr(config, "MODEL_EXCLUDE_NORMAL_CLASS", False))
-        active_classes = ["anxiety", "stress", "depression"] if exclude_normal else [
-            "normal", "anxiety", "stress", "depression"
-        ]
-        if str(result.get("model_label_top1") or "").lower() not in active_classes:
-            self._smoothed_probs = None
-            return result
-
-        probs = {
-            "normal": 0.0 if exclude_normal else float(result.get("model_probs_normal", 0.0) or 0.0),
-            "anxiety": float(result.get("model_probs_anxiety", 0.0) or 0.0),
-            "stress": float(result.get("model_probs_stress", 0.0) or 0.0),
-            "depression": float(result.get("model_probs_depression", 0.0) or 0.0),
-        }
-        total = sum(probs[k] for k in active_classes)
-        if total <= 0.0:
-            self._smoothed_probs = None
-            return result
-
-        alpha = max(0.01, min(1.0, float(config.MODEL_SMOOTHING_ALPHA)))
-        if self._smoothed_probs is None:
-            self._smoothed_probs = dict(probs)
-        else:
-            for k in self._smoothed_probs:
-                self._smoothed_probs[k] = alpha * probs[k] + (1.0 - alpha) * self._smoothed_probs[k]
-
-        if exclude_normal:
-            self._smoothed_probs["normal"] = 0.0
-
-        smooth_total = sum(self._smoothed_probs[k] for k in active_classes) or 1.0
-        normalized = {
-            "normal": 0.0,
-            "anxiety": self._smoothed_probs["anxiety"] / smooth_total,
-            "stress": self._smoothed_probs["stress"] / smooth_total,
-            "depression": self._smoothed_probs["depression"] / smooth_total,
-        }
-        if not exclude_normal:
-            normalized["normal"] = self._smoothed_probs["normal"] / smooth_total
-
-        label_top1 = max(active_classes, key=lambda k: normalized[k])
-        conf_top1 = normalized[label_top1]
-
-        out = dict(result)
-        out["model_label_top1"] = label_top1
-        out["model_confidence_top1"] = round(conf_top1, 6)
-        out["model_probs_normal"] = round(normalized["normal"], 6)
-        out["model_probs_anxiety"] = round(normalized["anxiety"], 6)
-        out["model_probs_stress"] = round(normalized["stress"], 6)
-        out["model_probs_depression"] = round(normalized["depression"], 6)
-        out["model_alert_active"] = (
-            label_top1 != "normal" and conf_top1 >= config.MODEL_ALERT_CONFIDENCE_THRESHOLD
-        )
-        if out["model_alert_active"]:
-            out["model_alert_reasons"] = f"CLASS={label_top1.upper()} CONF={round(conf_top1, 3)}"
-        elif str(out.get("model_alert_reasons", "")).startswith("CLASS="):
-            out["model_alert_reasons"] = ""
-        return out
-
-    def _annotate_runtime_state(self, result: dict, now: float) -> dict:
-        """Attach explicit runtime state and warmup countdown to payload."""
-        out = dict(result)
-        reason = str(out.get("model_alert_reasons") or "")
-        label = str(out.get("model_label_top1") or "").lower()
-
-        remaining = max(0.0, self._class_warmup_until - now)
-        warmup_active = (not self._sensor_touch_paused) and remaining > 0.0
-
-        if self._sensor_touch_paused:
-            state = "WAITING_SENSOR"
-            runtime_reason = "SENSOR_NOT_TOUCHED"
-            warmup_active = False
-            remaining = 0.0
-        elif warmup_active:
-            state = "WARMUP"
-            runtime_reason = f"CLASS_WARMUP:{round(remaining, 1)}s"
-        elif label in config.MODEL_CLASSES:
-            state = "RUNNING"
-            runtime_reason = "LIVE"
-            self._warmup_completed = True
-        elif reason.startswith("SERVICE_INIT"):
-            state = "INIT"
-            runtime_reason = reason
-        else:
-            state = "DEGRADED"
-            runtime_reason = reason or "UNKNOWN"
-
-        out["model_warmup_active"] = warmup_active
-        out["model_warmup_remaining_s"] = round(remaining, 2) if warmup_active else 0.0
-        out["model_runtime_state"] = state
-        out["model_runtime_reason"] = runtime_reason
-        return out
 
     def _append_history(
         self,

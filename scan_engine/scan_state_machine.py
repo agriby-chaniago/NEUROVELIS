@@ -11,6 +11,7 @@ State flow:
 
 import logging
 import math
+import statistics
 import time
 import threading
 from collections import Counter
@@ -80,6 +81,9 @@ class ScanStateMachine:
         self._sensor_wait         = False  # True when in DETECTING waiting for sensor touch
         self._sensor_was_ok       = False  # True once sensor was present in DETECTING (detect drop)
         self._sensor_absent_since = None   # grace period for STABILIZING/DATA_COLLECTION
+        # Prevents 8s countdown from restarting on repeated sensor toggles within one DETECTING cycle.
+        # Cleared by _transition() whenever DETECTING is exited.
+        self._detecting_clock_locked = False
 
         # DATA_COLLECTION
         self._data_samples:    list = []
@@ -125,6 +129,8 @@ class ScanStateMachine:
     # ── internal helpers ──────────────────────────────────────────────────────
 
     def _transition(self, new_state: str):
+        if self._state == "DETECTING":
+            self._detecting_clock_locked = False
         self._state        = new_state
         self._state_entered = time.monotonic()
 
@@ -200,8 +206,7 @@ class ScanStateMachine:
         if len(clean) < 4:
             return sum(clean) / len(clean)
         clean.sort()
-        q1 = clean[len(clean) // 4]
-        q3 = clean[(len(clean) * 3) // 4]
+        q1, _, q3 = statistics.quantiles(clean, n=4)
         iqr = q3 - q1
         lo, hi = q1 - 1.5 * iqr, q3 + 1.5 * iqr
         trimmed = [v for v in clean if lo <= v <= hi] or clean
@@ -312,10 +317,11 @@ class ScanStateMachine:
 
                 sensor_ok = self._sensor_ready(sensor_snapshot)
                 if sensor_ok:
-                    if not self._sensor_was_ok:
-                        # Sensor first becomes valid — restart 8s clock so countdown
-                        # counts from when BOTH face AND sensor are active simultaneously
+                    if not self._sensor_was_ok and not self._detecting_clock_locked:
+                        # Sensor first becomes valid this cycle — start 8s countdown from
+                        # when BOTH face AND sensor are simultaneously active.
                         self._state_entered = time.monotonic()
+                        self._detecting_clock_locked = True
                     self._sensor_was_ok = True
                     self._sensor_wait   = False
                 else:

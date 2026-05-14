@@ -405,6 +405,16 @@ class SessionManager:
             # Drain the write queue before exiting
             _write_q.put(None)   # poison pill
             _disk_thread.join(timeout=120.0)
+            if _disk_thread.is_alive():
+                logger.critical(
+                    "Session %s: disk-write thread still alive after 120s timeout — "
+                    "frame_timestamps.csv may be incomplete. File handles possibly still open.",
+                    metadata["session_id"],
+                )
+                with self._lock:
+                    if self._active:
+                        self._active["metadata"]["disk_timeout"] = True
+                return  # abort: do NOT call _assemble_mp4() on incomplete data
 
         with self._lock:
             if self._active:
@@ -441,6 +451,10 @@ class SessionManager:
             active = self._active
             if active is None:
                 return None
+            # Nullify under the same lock so sensor/video loops immediately see None
+            # and cannot race on metadata mutations below.
+            self._active  = None
+            self._threads = []
 
         meta = active["metadata"]
         meta["stopped_at_utc"] = datetime.now(timezone.utc).isoformat()
@@ -449,8 +463,6 @@ class SessionManager:
 
         with self._lock:
             self._last_meta = meta   # persist so stop_session() can return it
-            self._active  = None
-            self._threads = []
 
         logger.info(
             "Session %s finalized — %d frames, %d sensor rows",
