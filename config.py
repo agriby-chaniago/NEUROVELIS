@@ -146,7 +146,7 @@ CSV_FIELDNAMES = [
 # ─── Dashboard ─────────────────────────────────────────────────────────────
 DASHBOARD_HOST = "0.0.0.0"
 DASHBOARD_PORT = 5000
-DASHBOARD_SSE_INTERVAL_S = 0.5   # Push to browser every 500 ms
+DASHBOARD_SSE_INTERVAL_S = 0.25  # Push to browser every 250 ms
 
 # ─── Grove Buzzer v1.3 ────────────────────────────────────────────────────
 # Wiring: Colok ke port D5 pada Grove Base HAT
@@ -305,7 +305,7 @@ MODEL_INFERENCE_ENABLED = True
 MODEL_INFERENCE_BACKEND = "sklearn_pickle"
 # Enforce trained-model inference only (disable rule_based fallback path).
 MODEL_REQUIRE_TRAINED_BACKEND = True
-MODEL_INFERENCE_INTERVAL_S = 1.0
+MODEL_INFERENCE_INTERVAL_S = 0.5
 # Visual feature extraction/mesh refresh cadence (independent from model inference).
 # Lower value = smoother face mesh overlay but more CPU usage.
 MODEL_VISUAL_UPDATE_INTERVAL_S = 0.10

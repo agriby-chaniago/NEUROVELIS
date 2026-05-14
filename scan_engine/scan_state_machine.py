@@ -247,7 +247,7 @@ class ScanStateMachine:
                 self._tick()
             except Exception:
                 _logger.exception("ScanSM: uncaught error in _tick()")
-            time.sleep(0.1)
+            time.sleep(0.05)
 
     def _tick(self):
         latest    = self._mis.get_latest()
@@ -374,7 +374,7 @@ class ScanStateMachine:
 
                     if not consistent:
                         self._inconsistent_count += 1
-                        if self._inconsistent_count > 3:
+                        if self._inconsistent_count > 6:
                             self._reset_to_idle()
                     else:
                         self._inconsistent_count = 0
