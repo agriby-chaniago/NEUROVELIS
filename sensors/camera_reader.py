@@ -287,10 +287,11 @@ class CameraReader:
             },
             controls={
                 "FrameDurationLimits": (frame_us, frame_us),
-                "AwbEnable":  True,
-                "AeEnable":   True,
-                "Sharpness":  getattr(config, "CAMERA_SHARPNESS", 2.0),
-                "Brightness": getattr(config, "CAMERA_BRIGHTNESS", 0.0),
+                "AwbEnable":          True,
+                "AeEnable":           True,
+                "Sharpness":          getattr(config, "CAMERA_SHARPNESS", 2.0),
+                "Brightness":         getattr(config, "CAMERA_BRIGHTNESS", 0.0),
+                "NoiseReductionMode": getattr(config, "CAMERA_NOISE_REDUCTION_MODE", 1),
             },
             buffer_count=8,
         )

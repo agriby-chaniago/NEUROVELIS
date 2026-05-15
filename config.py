@@ -230,8 +230,8 @@ CAMERA_DEVICE_INDEX  = 0      # OpenCV fallback: index for /dev/video0 = 0
 
 # Resolusi output stream. Default disamakan dengan mode sensor 1080p.
 # Jika latensi/network berat di deployment, turunkan ke 1280x720 atau 640x360.
-CAMERA_STREAM_WIDTH  = 1920
-CAMERA_STREAM_HEIGHT = 1080
+CAMERA_STREAM_WIDTH  = 1280
+CAMERA_STREAM_HEIGHT = 720
 
 # Sharpness: 1.0 = camera default, 2.0 = sharper (software sharpening via ISP)
 CAMERA_SHARPNESS     = 2.0
@@ -276,7 +276,7 @@ CAMERA_SWAP_RB       = True
 # Example: 16000 ≈ 1/62.5 s shutter at 60 fps.  0 = leave AE enabled (default).
 CAMERA_FIXED_EXPOSURE_US = 16000   # microseconds; 0 = AE enabled. 16000 ≈ 1/62.5s @ 60fps
 CAMERA_ANALOGUE_GAIN     = 2.0     # analogue gain when fixed-exposure is active
-CAMERA_NOISE_REDUCTION_MODE = 2    # 0=off, 1=fast, 2=HighQuality (ISP NR)
+CAMERA_NOISE_REDUCTION_MODE = 1    # 0=off, 1=fast, 2=HighQuality (ISP NR)
 
 # ─── Experiment Settings ───────────────────────────────────────────────────
 # All experiment data is saved under DATA_DIR/sessions/{session_id}/
