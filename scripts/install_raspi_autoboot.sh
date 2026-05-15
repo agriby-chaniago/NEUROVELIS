@@ -193,9 +193,10 @@ ensure_camera_overlay() {
     overlay_line="dtoverlay=ov64a40,link-frequency=456000000"
   fi
 
-  if grep -Fq "$overlay_line" "$BOOT_CONFIG_FILE"; then
-    return 0
-  fi
+  # Remove ALL existing ov64a40 dtoverlay lines (any port variant) before
+  # writing the correct one. Two overlays for different ports causes libcamera
+  # to hang initialising the port with no physical camera attached.
+  sed -i '/^dtoverlay=ov64a40/d' "$BOOT_CONFIG_FILE"
 
   # Replace existing camera_auto_detect line, or append if absent.
   if grep -Eq '^camera_auto_detect=' "$BOOT_CONFIG_FILE"; then
