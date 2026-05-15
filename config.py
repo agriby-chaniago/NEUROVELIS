@@ -221,9 +221,9 @@ CAMERA_ENABLED       = True
 # CSI port selection (Raspberry Pi 5 dual-CSI).
 # Set 0 untuk CSI0 (default), 1 untuk CSI1.
 CAMERA_LIBCAMERA_INDEX = 0
-CAMERA_WIDTH         = 1920  # OV64A40 high-speed mode: 1920x1080 target 60fps
+CAMERA_WIDTH         = 1920
 CAMERA_HEIGHT        = 1080
-CAMERA_FRAMERATE     = 60    # Requires dtoverlay ov64a40 link-frequency=456000000
+CAMERA_FRAMERATE     = 30    # OV64A40 @ 1920x1080; libcamera v0.7.0 caps at ~36fps actual
 CAMERA_JPEG_QUALITY  = 75
 CAMERA_ROTATION      = 90     # clockwise degrees: 0 / 90 / 180 / 270
 CAMERA_DEVICE_INDEX  = 0      # OpenCV fallback: index for /dev/video0 = 0
