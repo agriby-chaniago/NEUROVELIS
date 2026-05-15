@@ -1,4 +1,4 @@
-"""Sensor-touch lifecycle manager and class-output warmup gate."""
+"""Sensor-touch + face-presence lifecycle manager and class-output warmup gate."""
 from __future__ import annotations
 
 import random
@@ -8,11 +8,11 @@ import config
 
 
 class _WarmupGate:
-    """Tracks finger-on-sensor contact and gates class output during warmup.
+    """Tracks finger-on-sensor contact and face presence; gates class output during warmup.
 
     Responsibilities:
     - Debounce raw sensor-touch signal (on/off hit counters)
-    - Schedule warmup window when new touch detected
+    - Schedule warmup window when BOTH touch AND face detected
     - Suppress class output during warmup period
     - Annotate result dict with runtime state / warmup countdown
     - Signal when EMA smoother should be reset (returns True from update())
@@ -27,6 +27,7 @@ class _WarmupGate:
         self._sensor_touch_paused_at: Optional[float] = None
         self._sensor_touch_present_hits: int = 0
         self._sensor_touch_absent_hits: int = 0
+        self._face_last_seen: bool = False
 
     @property
     def is_paused(self) -> bool:
@@ -78,8 +79,12 @@ class _WarmupGate:
             return False
         return self._sensor_touch_present_hits >= on_hits
 
-    def update(self, sensor_data: dict, now: float) -> bool:
-        """Process one sensor tick. Returns True if EMA smoother should be reset."""
+    def update(self, sensor_data: dict, now: float, face_detected: bool = True) -> bool:
+        """Process one sensor tick. Returns True if EMA smoother should be reset.
+
+        Warmup only starts when BOTH sensor is touched AND face_detected is True.
+        If sensor is held but face is absent, warmup is deferred until face appears.
+        """
         should_reset_smoother = False
         touched = self._is_sensor_touched_debounced(sensor_data)
         grace_s = max(1.0, min(3.0, float(getattr(config, "MODEL_SENSOR_TOUCH_GRACE_S", 2.0))))
@@ -88,9 +93,16 @@ class _WarmupGate:
         warmup_max = max(warmup_min, float(getattr(config, "MODEL_CLASS_WARMUP_MAX_S", warmup_default)))
         warmup_s = random.uniform(warmup_min, warmup_max)
 
+        face_just_appeared = face_detected and not self._face_last_seen
+        self._face_last_seen = face_detected
+
         if touched:
             self._sensor_touch_missing_since = None
-            if self._sensor_touch_paused or not self._sensor_touch_prev:
+            if not face_detected:
+                # Sensor held but face not in frame — defer warmup start until face appears.
+                self._sensor_touch_prev = True
+                return False
+            if self._sensor_touch_paused or not self._sensor_touch_prev or face_just_appeared:
                 absent_s = (
                     (now - self._sensor_touch_paused_at)
                     if self._sensor_touch_paused_at is not None
@@ -153,9 +165,17 @@ class _WarmupGate:
         remaining = max(0.0, self._class_warmup_until - now)
         warmup_active = (not self._sensor_touch_paused) and remaining > 0.0
 
+        sensor_active = not self._sensor_touch_paused and self._sensor_touch_prev
+        waiting_for_face = sensor_active and not self._face_last_seen
+
         if self._sensor_touch_paused:
             state = "WAITING_SENSOR"
             runtime_reason = "SENSOR_NOT_TOUCHED"
+            warmup_active = False
+            remaining = 0.0
+        elif waiting_for_face:
+            state = "WAITING_FACE"
+            runtime_reason = "FACE_NOT_DETECTED"
             warmup_active = False
             remaining = 0.0
         elif warmup_active:

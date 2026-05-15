@@ -243,7 +243,7 @@ class ModelInferenceService:
                 visual_features=visual_features,
             )
 
-            if self._warmup_gate.update(sensor_data=sensor_data, now=start):
+            if self._warmup_gate.update(sensor_data=sensor_data, now=start, face_detected=face_detected):
                 self._smoother.reset()
             if start >= next_inference_at:
                 if self._warmup_gate.is_paused:
