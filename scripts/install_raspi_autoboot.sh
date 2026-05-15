@@ -166,6 +166,54 @@ PY
   echo "$pin"
 }
 
+ensure_camera_overlay() {
+  # Configures /boot/firmware/config.txt for Arducam OV64A40 at 1920x1080@60fps.
+  # Set CAMERA_CAM0=1 when camera is connected to the CAM0 port (Pi 5 / CM5).
+  local cam0="${CAMERA_CAM0:-0}"
+
+  if [[ -z "$BOOT_CONFIG_FILE" ]]; then
+    local cfg
+    for cfg in /boot/firmware/config.txt /boot/config.txt; do
+      if [[ -f "$cfg" ]]; then
+        BOOT_CONFIG_FILE="$cfg"
+        break
+      fi
+    done
+  fi
+
+  if [[ -z "$BOOT_CONFIG_FILE" ]]; then
+    echo "Warning: boot config not found; skipping camera overlay setup." >&2
+    return 1
+  fi
+
+  local overlay_line
+  if [[ "$cam0" == "1" ]]; then
+    overlay_line="dtoverlay=ov64a40,cam0,link-frequency=456000000"
+  else
+    overlay_line="dtoverlay=ov64a40,link-frequency=456000000"
+  fi
+
+  if grep -Fq "$overlay_line" "$BOOT_CONFIG_FILE"; then
+    return 0
+  fi
+
+  # Replace existing camera_auto_detect line, or append if absent.
+  if grep -Eq '^camera_auto_detect=' "$BOOT_CONFIG_FILE"; then
+    sed -i 's/^camera_auto_detect=.*/camera_auto_detect=0/' "$BOOT_CONFIG_FILE"
+  else
+    echo "camera_auto_detect=0" >> "$BOOT_CONFIG_FILE"
+  fi
+
+  {
+    echo ""
+    echo "# NEUROVELIS: Arducam OV64A40 — 1920x1080@60fps requires high-speed link"
+    echo "[all]"
+    echo "$overlay_line"
+  } >> "$BOOT_CONFIG_FILE"
+
+  BOOT_CONFIG_UPDATED=1
+}
+
 cleanup_legacy_brand_artifacts() {
   # Stop and disable the legacy unit if it still exists from previous installs.
   systemctl disable --now "$LEGACY_SERVICE_NAME" >/dev/null 2>&1 || true
@@ -214,6 +262,7 @@ if [[ ! "$BUZZER_GPIO_PIN" =~ ^[0-9]+$ ]]; then
 fi
 
 ensure_buzzer_boot_default_low "$BUZZER_GPIO_PIN" || true
+ensure_camera_overlay || true
 install_shutdown_buzzer_hook "$BUZZER_GPIO_PIN"
 
 cat > "$SERVICE_FILE" <<EOF
@@ -282,8 +331,13 @@ echo "- systemd service  : $SERVICE_FILE"
 echo "- venv activate    : $VENV_ACTIVATE"
 if [[ -n "$BOOT_CONFIG_FILE" ]]; then
   echo "- boot gpio default: $BOOT_CONFIG_FILE (gpio=$BUZZER_GPIO_PIN=ip,pd + gpio=$BUZZER_GPIO_PIN=op,dl)"
+  if [[ "${CAMERA_CAM0:-0}" == "1" ]]; then
+    echo "- camera overlay   : dtoverlay=ov64a40,cam0,link-frequency=456000000"
+  else
+    echo "- camera overlay   : dtoverlay=ov64a40,link-frequency=456000000"
+  fi
   if [[ "$BOOT_CONFIG_UPDATED" -eq 1 ]]; then
-    echo "  note: boot config updated, reboot is required to apply firmware-level GPIO default"
+    echo "  note: boot config updated — reboot required to apply firmware-level changes"
   fi
 fi
 if [[ "$SHUTDOWN_HOOK_INSTALLED" -eq 1 ]]; then

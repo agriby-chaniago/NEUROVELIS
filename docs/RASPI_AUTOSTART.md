@@ -60,34 +60,27 @@ Script ini otomatis:
 Untuk Arducam OV64A40, mode 1920x1080 @ 60fps hanya aktif jika link frequency
 di firmware memakai mode high-speed.
 
-1. Edit boot config:
+`install_raspi_autoboot.sh` menangani ini secara otomatis. Jalankan saja script
+instalasi dan konfigurasi kamera akan ditambahkan ke boot config.
+
+Untuk kamera di port CAM0 (Pi 5 / CM5), tambahkan env var:
 
 ```bash
-sudo nano /boot/firmware/config.txt
+sudo CAMERA_CAM0=1 bash scripts/install_raspi_autoboot.sh
 ```
 
-1. Pastikan konfigurasi berikut ada di file:
+Konfigurasi yang ditambahkan ke `/boot/firmware/config.txt`:
 
 ```ini
 camera_auto_detect=0
 
 [all]
 dtoverlay=ov64a40,link-frequency=456000000
-```
-
-1. Jika kamera dipasang di CAM0 (khusus Pi 5/CM), gunakan:
-
-```ini
+# atau jika CAM0:
 dtoverlay=ov64a40,cam0,link-frequency=456000000
 ```
 
-1. Reboot:
-
-```bash
-sudo reboot
-```
-
-1. Verifikasi kamera terdeteksi:
+Setelah install, reboot dan verifikasi:
 
 ```bash
 rpicam-still --list-cameras
