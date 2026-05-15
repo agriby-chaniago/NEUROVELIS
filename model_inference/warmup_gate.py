@@ -28,10 +28,18 @@ class _WarmupGate:
         self._sensor_touch_present_hits: int = 0
         self._sensor_touch_absent_hits: int = 0
         self._face_last_seen: bool = False
+        # True when sensor IS touched but face not yet in frame.
+        # Distinct from _sensor_touch_paused (sensor absent) so the UI shows
+        # "WAITING_FACE" rather than "WAITING_SENSOR" when finger is on sensor.
+        self._waiting_for_face: bool = False
 
     @property
     def is_paused(self) -> bool:
         return self._sensor_touch_paused
+
+    @property
+    def is_waiting_for_face(self) -> bool:
+        return self._waiting_for_face
 
     @staticmethod
     def _is_sensor_touched(sensor_data: dict) -> bool:
@@ -99,9 +107,15 @@ class _WarmupGate:
         if touched:
             self._sensor_touch_missing_since = None
             if not face_detected:
-                # Sensor held but face not in frame — defer warmup start until face appears.
+                # Sensor held but face not in frame — clear sensor-pause (finger IS on sensor)
+                # and set waiting_for_face so UI shows WAITING_FACE, not WAITING_SENSOR.
+                self._sensor_touch_paused = False
+                self._sensor_touch_paused_at = None
+                self._waiting_for_face = True
                 self._sensor_touch_prev = True
                 return False
+            # Face AND sensor both present — clear both hold flags.
+            self._waiting_for_face = False
             if self._sensor_touch_paused or not self._sensor_touch_prev or face_just_appeared:
                 absent_s = (
                     (now - self._sensor_touch_paused_at)
@@ -122,6 +136,8 @@ class _WarmupGate:
             self._sensor_touch_prev = True
             return should_reset_smoother
 
+        # Sensor not touched — clear face-wait flag (no point waiting for face without sensor).
+        self._waiting_for_face = False
         if self._sensor_touch_missing_since is None:
             self._sensor_touch_missing_since = now
 
@@ -163,17 +179,18 @@ class _WarmupGate:
         label = str(out.get("model_label_top1") or "").lower()
 
         remaining = max(0.0, self._class_warmup_until - now)
-        warmup_active = (not self._sensor_touch_paused) and remaining > 0.0
-
-        sensor_active = not self._sensor_touch_paused and self._sensor_touch_prev
-        waiting_for_face = sensor_active and not self._face_last_seen
+        warmup_active = (
+            not self._sensor_touch_paused
+            and not self._waiting_for_face
+            and remaining > 0.0
+        )
 
         if self._sensor_touch_paused:
             state = "WAITING_SENSOR"
             runtime_reason = "SENSOR_NOT_TOUCHED"
             warmup_active = False
             remaining = 0.0
-        elif waiting_for_face:
+        elif self._waiting_for_face:
             state = "WAITING_FACE"
             runtime_reason = "FACE_NOT_DETECTED"
             warmup_active = False

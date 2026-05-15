@@ -246,8 +246,13 @@ class ModelInferenceService:
             if self._warmup_gate.update(sensor_data=sensor_data, now=start, face_detected=face_detected):
                 self._smoother.reset()
             if start >= next_inference_at:
-                if self._warmup_gate.is_paused:
-                    result = _unknown_payload(reason="SENSOR_NOT_TOUCHED_PAUSED")
+                if self._warmup_gate.is_paused or self._warmup_gate.is_waiting_for_face:
+                    _pause_reason = (
+                        "SENSOR_NOT_TOUCHED_PAUSED"
+                        if self._warmup_gate.is_paused
+                        else "FACE_NOT_DETECTED_PAUSED"
+                    )
+                    result = _unknown_payload(reason=_pause_reason)
                     result["model_latency_ms"] = 0
                     result["model_pipeline_latency_ms"] = 0
                     result["model_loop_latency_ms"] = 0

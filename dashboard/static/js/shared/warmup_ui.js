@@ -31,6 +31,8 @@
     "Keep the sensor stable and face the camera until status is Running.";
   const WAIT_SENSOR_MESSAGE =
     "Place your finger on the sensor so warmup can start.";
+  const WAIT_FACE_MESSAGE =
+    "Face the camera so warmup can start.";
   const WARMUP_MESSAGE =
     "Model warmup is running. Stay still and face the camera.";
 
@@ -98,6 +100,7 @@
 
     if (!token) return "unknown";
     if (token === "sensor_not_touched") return "wait_sensor";
+    if (token === "face_not_detected") return "wait_face";
     if (token === "live") return "running";
     if (token === "class_warmup") return "class_warmup";
     return token;
@@ -145,6 +148,8 @@
         return "Class Warmup";
       case "WAITING_SENSOR":
         return "Wait Sensor";
+      case "WAITING_FACE":
+        return "Face Camera";
       case "INIT":
         return "Init";
       default:
@@ -166,6 +171,8 @@
         return WARMUP_MESSAGE;
       case "wait_sensor":
         return WAIT_SENSOR_MESSAGE;
+      case "wait_face":
+        return WAIT_FACE_MESSAGE;
       case "stabilizing":
         return STABILIZATION_MESSAGE;
       case "running":
@@ -187,7 +194,7 @@
     const s = String(state || "").toLowerCase();
     if (s === "running") return "is-running";
     if (s === "warmup") return "is-warmup";
-    if (s === "waiting_sensor") return "is-waiting";
+    if (s === "waiting_sensor" || s === "waiting_face") return "is-waiting";
     if (s === "init") return "is-init";
     return "is-degraded";
   }
@@ -323,6 +330,7 @@
     const shouldShowBanner =
       warm.warmupActive ||
       warm.runtimeState === "WAITING_SENSOR" ||
+      warm.runtimeState === "WAITING_FACE" ||
       stabilizationActive;
     const bannerStateText = stabilizationActive
       ? "STABILIZING"
@@ -339,16 +347,20 @@
       ? "class_warmup"
       : warm.runtimeState === "WAITING_SENSOR"
         ? "wait_sensor"
-        : stabilizationActive
-          ? STABILIZATION_REASON_TOKEN
-          : warm.runtimeReasonToken;
+        : warm.runtimeState === "WAITING_FACE"
+          ? "wait_face"
+          : stabilizationActive
+            ? STABILIZATION_REASON_TOKEN
+            : warm.runtimeReasonToken;
     const bannerReasonMessage = warm.warmupActive
       ? WARMUP_MESSAGE
       : warm.runtimeState === "WAITING_SENSOR"
         ? WAIT_SENSOR_MESSAGE
-        : stabilizationActive
-          ? STABILIZATION_MESSAGE
-          : reasonMessageFromToken(warm.runtimeReasonToken);
+        : warm.runtimeState === "WAITING_FACE"
+          ? WAIT_FACE_MESSAGE
+          : stabilizationActive
+            ? STABILIZATION_MESSAGE
+            : reasonMessageFromToken(warm.runtimeReasonToken);
 
     warm.reasonToken = bannerReasonToken;
     warm.reasonMessage = bannerReasonMessage;
