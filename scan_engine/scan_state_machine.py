@@ -76,6 +76,7 @@ class ScanStateMachine:
         self._locked_bbox        = None   # locked at STABILIZING entry
         self._face_absent_since  = None
         self._inconsistent_count = 0      # FIX 12: jitter counter
+        self._face_present_streak = 0     # consecutive True-face ticks in STABILIZING
 
         # sensor tracking
         self._sensor_wait         = False  # True when in DETECTING waiting for sensor touch
@@ -145,6 +146,7 @@ class ScanStateMachine:
         self._locked_bbox        = None
         self._inconsistent_count  = 0
         self._face_absent_since   = None
+        self._face_present_streak = 0
         self._data_samples        = []
         self._locked_face_bbox    = None
         self._sensor_wait         = False
@@ -153,11 +155,23 @@ class ScanStateMachine:
 
     @staticmethod
     def _bbox_from_landmarks(landmarks):
-        """Return (cx, cy, w) from normalized 468-landmark list, or None."""
+        """Return (cx, cy, w) from normalized landmark list, or None."""
         if not landmarks:
             return None
-        xs = [lm[0] for lm in landmarks]
-        ys = [lm[1] for lm in landmarks]
+        points = []
+        for lm in landmarks:
+            try:
+                x = float(lm[0])
+                y = float(lm[1])
+            except (IndexError, TypeError, ValueError):
+                continue
+            if not (math.isfinite(x) and math.isfinite(y)):
+                continue
+            points.append((x, y))
+        if not points:
+            return None
+        xs = [p[0] for p in points]
+        ys = [p[1] for p in points]
         xmin, xmax = min(xs), max(xs)
         ymin, ymax = min(ys), max(ys)
         return ((xmin + xmax) / 2, (ymin + ymax) / 2, xmax - xmin)
@@ -178,7 +192,9 @@ class ScanStateMachine:
 
     def _face_consistent(self, bbox) -> bool:
         """Bbox must not drift from locked position (guard during STABILIZING)."""
-        if self._locked_bbox is None or bbox is None:
+        if bbox is None:
+            return False
+        if self._locked_bbox is None:
             return True
         cx0, cy0, w0 = self._locked_bbox
         cx1, cy1, _  = bbox
@@ -342,13 +358,19 @@ class ScanStateMachine:
             elif state == "WARMUP":
                 if not face:
                     self._reset_to_idle()
+                    return
                 elif not self._sensor_ready(sensor_snapshot):
                     _logger.warning("ScanSM: sensor dropped in WARMUP, reset")
                     self._reset_to_idle()
+                    return
                 else:
                     self._prev_bbox = bbox
                     if self._elapsed() >= config.SCAN_WARMUP_DURATION:
-                        self._locked_bbox = bbox
+                        self._locked_bbox         = bbox
+                        self._inconsistent_count  = 0
+                        self._face_present_streak = 0
+                        self._face_absent_since   = None
+                        self._sensor_absent_since = None
                         self._transition("STABILIZING")
 
             elif state == "STABILIZING":
@@ -357,12 +379,16 @@ class ScanStateMachine:
                     self._reset_to_idle()
                     return
                 if not face:
+                    self._face_present_streak = 0
                     if self._face_absent_since is None:
                         self._face_absent_since = time.monotonic()
                     elif time.monotonic() - self._face_absent_since > 5.0:
                         self._reset_to_idle()
+                        return
                 else:
-                    self._face_absent_since = None
+                    self._face_present_streak += 1
+                    if self._face_present_streak >= 10:  # ~500ms consecutive before clearing
+                        self._face_absent_since = None
 
                     # sensor absent gate (5s grace)
                     if not self._sensor_ready(sensor_snapshot):
@@ -382,6 +408,7 @@ class ScanStateMachine:
                         self._inconsistent_count += 1
                         if self._inconsistent_count > 6:
                             self._reset_to_idle()
+                            return
                     else:
                         self._inconsistent_count = 0
                         if self._elapsed() >= config.SCAN_STABILIZING_DURATION:
@@ -389,6 +416,8 @@ class ScanStateMachine:
                             self._locked_face_bbox    = bbox
                             self._face_absent_since   = None
                             self._sensor_absent_since = None
+                            self._face_present_streak = 0
+                            self._inconsistent_count  = 0
                             _logger.info("ScanSM: STABILIZING → DATA_COLLECTION")
                             self._transition("DATA_COLLECTION")
 
