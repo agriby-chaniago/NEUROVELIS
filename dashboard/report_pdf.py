@@ -12,47 +12,21 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import cm
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import (
+    KeepTogether, ListFlowable, ListItem,
+    Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
+)
+
+from dashboard.report_content import (
+    get_display_label, get_recommendation, get_summary,
+)
 
 # FIX 7: only 1 PDF build at a time
 _pdf_semaphore = threading.Semaphore(1)
 
-# Format per kondisi: list (threshold_pct, text)
-# Ambil bucket pertama dengan threshold >= confidence%
-SUMMARY_BUCKETS = {
-    "stress": [
-        (25,  "Terlihat sedikit kecenderungan respons stres selama pemeriksaan. "
-              "Perubahan biometrik masih dalam rentang ringan dan dapat dipengaruhi kondisi sementara."),
-        (50,  "Hasil biometrik menunjukkan kecenderungan respons stres ringan hingga sedang "
-              "selama pemeriksaan berlangsung."),
-        (75,  "Pola biometrik menunjukkan respons stres yang cukup konsisten selama pemeriksaan."),
-        (100, "Respons biometrik menunjukkan tingkat stres yang dominan selama pemeriksaan berlangsung."),
-    ],
-    "anxiety": [
-        (25,  "Terlihat sedikit peningkatan respons fisiologis selama pemeriksaan, "
-              "namun masih dalam tingkat ringan."),
-        (50,  "Pola biometrik menunjukkan kecenderungan ketegangan atau kecemasan ringan "
-              "selama pemeriksaan."),
-        (75,  "Respons biometrik menunjukkan pola kecemasan yang cukup konsisten selama pemeriksaan."),
-        (100, "Pola biometrik menunjukkan tingkat kecemasan yang dominan selama pemeriksaan."),
-    ],
-    "depression": [
-        (25,  "Aktivitas biometrik terlihat relatif tenang selama pemeriksaan dan "
-              "masih dapat dipengaruhi banyak faktor sementara."),
-        (50,  "Pola biometrik menunjukkan kecenderungan aktivitas fisiologis yang lebih rendah dari biasanya."),
-        (75,  "Hasil biometrik menunjukkan pola aktivitas fisiologis rendah yang cukup konsisten."),
-        (100, "Pola biometrik menunjukkan kecenderungan aktivitas fisiologis rendah yang dominan "
-              "selama pemeriksaan berlangsung."),
-    ],
-    "normal": [
-        (100, "Parameter fisiologis berada dalam rentang yang diharapkan selama pemeriksaan. "
-              "Tetap jaga pola hidup sehat dan istirahat yang cukup."),
-    ],
-}
-
 _DISCLAIMER = (
-    "Hasil ini merupakan interpretasi biometrik berbasis AI dan tidak menggantikan "
-    "evaluasi medis atau psikologis profesional."
+    "Hasil ini merupakan interpretasi berbasis indikator biometrik dan tidak menggantikan "
+    "diagnosis atau evaluasi medis maupun psikologis profesional."
 )
 
 
@@ -61,15 +35,6 @@ def _safe_float(val, default=0.0):
         return float(val) if val is not None else default
     except (TypeError, ValueError):
         return default
-
-
-def get_summary(condition: str, confidence: float) -> str:
-    buckets = SUMMARY_BUCKETS.get(condition, SUMMARY_BUCKETS["normal"])
-    pct = confidence * 100
-    for threshold, text in buckets:
-        if pct <= threshold:
-            return text
-    return buckets[-1][1]
 
 
 def build_pdf(name: str, scan_data: dict) -> BytesIO:
@@ -143,7 +108,7 @@ def _build(name: str, scan_data: dict) -> BytesIO:
 
     section_title = "Kecenderungan Dominan" if overridden else "Hasil Deteksi"
     h(section_title, "Heading2")
-    p(f"<b>Kondisi:</b> {display_dominant.title()}")
+    p(f"<b>Kondisi:</b> {get_display_label(display_dominant)}")
     p(f"<b>Confidence:</b> {display_confidence * 100:.1f}%")
     gap()
 
@@ -171,6 +136,23 @@ def _build(name: str, scan_data: dict) -> BytesIO:
     h("Ringkasan", "Heading2")
     p(get_summary(display_dominant, display_confidence))
     p(f"<i>{_DISCLAIMER}</i>")
+    gap()
+
+    h("Rekomendasi", "Heading2")
+    for group in get_recommendation(display_dominant, display_confidence):
+        group_elements = [
+            Paragraph(group["kategori"], styles["Heading3"]),
+            ListFlowable(
+                [ListItem(Paragraph(item, styles["Normal"]), leftIndent=12) for item in group["items"]],
+                bulletType="bullet",
+                bulletFontSize=8,
+                leftIndent=20,
+                spaceBefore=2,
+                spaceAfter=4,
+            ),
+            Spacer(1, 0.25 * cm),
+        ]
+        story.append(KeepTogether(group_elements))
 
     doc.build(story)
     buf.seek(0)

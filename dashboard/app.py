@@ -326,7 +326,9 @@ def create_app(
         if scan_data is None:
             return render_template("pages/report.html", error="Data scan tidak ditemukan."), 404
 
-        from dashboard.report_pdf import get_summary
+        from dashboard.report_content import (
+            get_display_label, get_recommendation, get_severity_label, get_summary,
+        )
 
         result  = scan_data.get("result") or {}
         metrics = result.get("metrics") or {}
@@ -354,9 +356,12 @@ def create_app(
             scan_id=scan_id,
             token=token,
             dominant=display_dominant,
+            display_label=get_display_label(display_dominant),
+            severity=get_severity_label(display_confidence),
             confidence=display_confidence,
             overridden=overridden,
             summary=get_summary(display_dominant, display_confidence),
+            recommendation=get_recommendation(display_dominant, display_confidence),
             hr=_safe_float(metrics.get("hr"), 0.0),
             gsr_level=metrics.get("gsr_level") or "-",
             gsr_value=_safe_float(metrics.get("gsr_value"), 0.0),

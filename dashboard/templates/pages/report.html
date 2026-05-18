@@ -254,6 +254,60 @@
     .error-card h2 { font-size: 1rem; margin-bottom: 0.5rem; }
     .error-card p  { font-size: 0.8rem; opacity: 0.8; }
 
+    /* Severity badge */
+    .severity-badge {
+      display: inline-block;
+      padding: 0.15rem 0.5rem;
+      border-radius: 12px;
+      font-size: 0.65rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      vertical-align: middle;
+      margin-left: 0.4rem;
+    }
+    .sev-rendah  { background: #e6f4ec; color: #1e7845; border: 1px solid #9ed4b6; }
+    .sev-ringan  { background: #fff8e1; color: #8a6200; border: 1px solid #fdd87a; }
+    .sev-sedang  { background: #fff3e0; color: #c25d00; border: 1px solid #f4c38a; }
+    .sev-tinggi  { background: #fce4e4; color: #b71c1c; border: 1px solid #f0b3b3; }
+
+    /* Recommendation */
+    .rec-group {
+      margin-bottom: 1rem;
+    }
+    .rec-group:last-child {
+      margin-bottom: 0;
+    }
+    .rec-group-title {
+      font-size: 0.68rem;
+      font-weight: 700;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      margin-bottom: 0.4rem;
+    }
+    .rec-list {
+      padding-left: 0;
+      list-style: none;
+    }
+    .rec-list li {
+      font-size: 0.81rem;
+      line-height: 1.65;
+      color: var(--text);
+      padding: 0.18rem 0 0.18rem 1.2rem;
+      position: relative;
+    }
+    .rec-list li:last-child {
+      padding-bottom: 0;
+    }
+    .rec-list li::before {
+      content: "•";
+      position: absolute;
+      left: 0;
+      color: var(--accent);
+      font-weight: 700;
+    }
+
     /* Footer */
     .footer {
       text-align: center;
@@ -283,7 +337,10 @@
     <div class="card-title">{% if overridden %}Kecenderungan Dominan{% else %}Hasil Deteksi{% endif %}</div>
 
     <div class="result-dominant">
-      <span class="result-badge badge-{{ dominant }}{% if confidence < 0.5 %} badge-low{% endif %}">{{ dominant|title }}</span>
+      <span class="result-badge badge-{{ dominant }}{% if confidence < 0.5 %} badge-low{% endif %}">{{ display_label }}</span>
+      <span class="severity-badge sev-{{ severity|lower }}">{{ severity }}</span>
+    </div>
+    <div style="margin-bottom:0.5rem">
       <span class="result-conf">Confidence: {{ "%.1f"|format(confidence * 100) }}%</span>
     </div>
 
@@ -337,7 +394,22 @@
   <div class="card">
     <div class="card-title">Ringkasan</div>
     <p class="summary-text">{{ summary }}</p>
-    <p class="disclaimer">{{ "Hasil ini merupakan interpretasi biometrik berbasis AI dan tidak menggantikan evaluasi medis atau psikologis profesional." }}</p>
+    <p class="disclaimer">Hasil ini merupakan interpretasi berbasis indikator biometrik dan tidak menggantikan diagnosis atau evaluasi medis maupun psikologis profesional.</p>
+  </div>
+
+  <!-- Recommendations -->
+  <div class="card">
+    <div class="card-title">Rekomendasi</div>
+    {% for group in recommendation %}
+    <div class="rec-group">
+      <div class="rec-group-title">{{ group["kategori"] }}</div>
+      <ul class="rec-list">
+        {% for item in group["items"] %}
+        <li>{{ item }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endfor %}
   </div>
 
   <!-- Name form → download PDF -->
