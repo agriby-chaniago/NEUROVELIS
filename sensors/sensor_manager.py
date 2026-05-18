@@ -201,6 +201,10 @@ class SensorManager:
         """
         Merge new_data into latest_data (thread-safe), evaluate alerts,
         trigger buzzer if needed, then push to CSV.
+
+        Invariant: CSV rows reflect the exact sensor snapshot used during
+        alert evaluation — sensor values and alert flags are always consistent
+        within a single row.
         """
         with self._lock:
             now_utc = datetime.now(timezone.utc).isoformat()
@@ -208,15 +212,21 @@ class SensorManager:
             self.latest_data["schema_version"] = config.DATA_SCHEMA_VERSION
             self.latest_data.update(new_data)
             self._last_update_mono = time.monotonic()
+            # Snapshot taken here — same values used for alert evaluation and CSV.
             snapshot = dict(self.latest_data)
 
-        # Evaluate alerts outside lock (buzzer runs in its own thread)
+        # Evaluate alerts outside lock (buzzer runs in its own thread).
         alert_active, alert_reasons = self._buzzer.check_and_alert(snapshot)
+        alert_str = ", ".join(alert_reasons)
+
+        # Apply alert result to the snapshot for CSV (internally consistent row).
+        snapshot["alert_active"]  = alert_active
+        snapshot["alert_reasons"] = alert_str
+
+        # Update latest_data so SSE/dashboard consumers see current alert state.
         with self._lock:
             self.latest_data["alert_active"]  = alert_active
-            self.latest_data["alert_reasons"] = ", ".join(alert_reasons)
-            snapshot["alert_active"]  = alert_active
-            snapshot["alert_reasons"] = ", ".join(alert_reasons)
+            self.latest_data["alert_reasons"] = alert_str
 
         self._csv_logger.log(snapshot)
 

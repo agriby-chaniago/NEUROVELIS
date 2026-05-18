@@ -65,6 +65,9 @@ class CameraReader:
         # Signalled by encode/worker threads on each new frame.
         # Used by wait_new_frame() for event-driven inference (avoids polling).
         self._new_frame_event: threading.Event = threading.Event()
+        # Set to True permanently once picamera2 ImportError is detected.
+        # Avoids re-attempting native backend on every restart — see _capture_loop.
+        self._force_subprocess: bool = False
 
     # ── Lifecycle ─────────────────────────────────────────────────────────
 
@@ -203,20 +206,44 @@ class CameraReader:
     # ── Main capture loop ─────────────────────────────────────────────────
 
     def _capture_loop(self):
-        """Run camera capture through the worker subprocess with restart-on-fail."""
+        """Try picamera2 inline backend first; fall back to worker subprocess on ImportError.
+
+        Inline path sets self._cam so capture_snapshot() can return full-res frames.
+        Subprocess path is used when picamera2 cannot be imported in the main process
+        (e.g. venv without system picamera2 packages) — camera_worker.py handles it
+        in an isolated interpreter that has access to system site-packages.
+
+        self._force_subprocess is sticky per process lifetime: once picamera2 fails
+        to import, subprocess backend is used for all subsequent restarts without
+        re-attempting picamera2. This is intentional — avoids backend thrashing and
+        keeps restart behavior deterministic. To retry native picamera2, restart the
+        process.
+        """
         while self._running:
             try:
-                self._loop_opencv()
+                if self._force_subprocess:
+                    self._loop_opencv()
+                else:
+                    self._loop_picamera2()
+            except ImportError as exc:
+                logger.warning(
+                    "CameraReader: picamera2 not importable in main process (%s) — "
+                    "switching permanently to worker subprocess backend",
+                    exc,
+                )
+                self._force_subprocess = True
+                time.sleep(0.1)
+                continue
             except Exception as exc:
                 if self._running:
                     self._error = str(exc)
-                    logger.error("CameraReader: worker subprocess failed: %s", exc)
+                    logger.error("CameraReader: camera backend failed: %s", exc)
 
             if not self._running:
                 break
 
             logger.warning(
-                "CameraReader: restarting worker subprocess in %.1fs",
+                "CameraReader: restarting camera backend in %.1fs",
                 _RESTART_DELAY_S,
             )
             time.sleep(_RESTART_DELAY_S)

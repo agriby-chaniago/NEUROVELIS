@@ -5,6 +5,7 @@ Freezes a scan result into JSON and manages the data/scans/ directory.
 Resolves the QR base URL via ngrok (if running) with LAN IP fallback.
 """
 
+import hmac
 import json
 import math
 import os
@@ -186,7 +187,8 @@ class ResultFreezer:
         data = self.load(scan_id)
         if not data:
             return False
-        return data.get("token") == token   # FIX 6: compare stored token
+        stored = str(data.get("token", ""))
+        return hmac.compare_digest(stored, str(token))
 
     def cleanup_old_scans(self):
         """FIX 5 + 15: delete scan JSON files older than 24 hours, safe delete."""

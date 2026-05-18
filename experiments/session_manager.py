@@ -125,13 +125,12 @@ class SessionManager:
                     "Another session is already active. "
                     f"Stop session {self._active['metadata']['session_id']} first."
                 )
+            session_id = self._next_session_id()
 
         if duration_sec is None:
             duration_sec = int(
                 getattr(config, "EXPERIMENT_SESSION_DURATION_S", 60)
             )
-
-        session_id  = self._next_session_id()
         started_at  = datetime.now(timezone.utc)
 
         session_dir = self._sessions_dir / session_id

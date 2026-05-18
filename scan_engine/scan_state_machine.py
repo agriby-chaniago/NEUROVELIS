@@ -486,12 +486,18 @@ class ScanStateMachine:
                         self._reset_to_idle()
                         return
 
-                    valid_labels = [s["label"] for s in self._data_samples if s.get("label")]
-                    if valid_labels:
-                        avg_label = Counter(valid_labels).most_common(1)[0][0]
-                    else:
-                        _logger.warning("ScanSM: no valid labels in samples, defaulting to 'normal'")
-                        avg_label = "normal"
+                    valid_labels = [
+                        s["label"] for s in self._data_samples
+                        if s.get("label") and s["label"] not in ("unknown", "")
+                    ]
+                    if not valid_labels:
+                        _logger.warning(
+                            "ScanSM: no valid labels in %d samples (all unknown/empty) — reset to IDLE",
+                            len(self._data_samples),
+                        )
+                        self._reset_to_idle()
+                        return
+                    avg_label = Counter(valid_labels).most_common(1)[0][0]
 
                     label_to_key = {"stress": "stress", "anxiety": "anxiety", "depression": "depression"}
                     prob_key = label_to_key.get(avg_label)

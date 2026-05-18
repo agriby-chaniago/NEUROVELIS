@@ -7,7 +7,7 @@ Change sensor wiring? Update this file only.
 # ─── I2C Bus ───────────────────────────────────────────────────────────────
 I2C_BUS = 1   # /dev/i2c-1 (Raspberry Pi standard bus)
 
-# ─── BME280 (temperature + pressure + humidity) ──────────────────────────
+# ─── BMP280 / BME280 (temperature + pressure; humidity on BME280 only) ───
 # Wiring:
 #   VCC → 3.3V (Pin 1)    GND → GND (Pin 6)
 #   SDA → GPIO2 (Pin 3)   SCL → GPIO3 (Pin 5)

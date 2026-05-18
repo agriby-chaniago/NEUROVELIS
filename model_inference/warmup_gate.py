@@ -99,7 +99,6 @@ class _WarmupGate:
         warmup_default = max(0.0, float(getattr(config, "MODEL_CLASS_WARMUP_S", 4.0)))
         warmup_min = max(0.0, float(getattr(config, "MODEL_CLASS_WARMUP_MIN_S", warmup_default)))
         warmup_max = max(warmup_min, float(getattr(config, "MODEL_CLASS_WARMUP_MAX_S", warmup_default)))
-        warmup_s = random.uniform(warmup_min, warmup_max)
 
         face_just_appeared = face_detected and not self._face_last_seen
         self._face_last_seen = face_detected
@@ -131,6 +130,7 @@ class _WarmupGate:
                 self._sensor_touch_paused_at = None
                 should_reset_smoother = True
                 if should_restart_warmup:
+                    warmup_s = random.uniform(warmup_min, warmup_max)
                     self._class_warmup_until = now + warmup_s
                     self._warmup_completed = False  # warmup per-subject, not per-service-lifetime
             self._sensor_touch_prev = True
