@@ -1,4 +1,4 @@
-# Ngrok Setup for Raspberry Pi (NEUROSENSE)
+# Ngrok Setup for Raspberry Pi (NEUROVELIS)
 
 Expose the Flask dashboard (port 5000) via a public URL so phones can scan QR codes from anywhere — not just the local WiFi.
 
@@ -66,7 +66,7 @@ Expected output includes a `public_url` like `https://abc-123.ngrok-free.app`.
 ```bash
 sudo tee /etc/systemd/system/ngrok.service > /dev/null << 'EOF'
 [Unit]
-Description=ngrok tunnel for NEUROSENSE
+Description=ngrok tunnel for NEUROVELIS
 After=network-online.target
 Wants=network-online.target
 

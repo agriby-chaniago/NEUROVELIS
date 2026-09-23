@@ -1,4 +1,4 @@
-# NEUROSENSE + Forward Psikiater
+# NEUROVELIS + Forward Psikiater
 
 Sistem skrining psikofisiologis berbasis Raspberry Pi yang menggabungkan pembacaan
 sensor biometrik dengan analisis fitur wajah, lalu menampilkan hasilnya melalui
@@ -39,7 +39,7 @@ dan tidak dikirim ke layanan pihak ketiga mana pun.
 
 ## Kepemilikan dan Pengembang
 
-NEUROSENSE + Forward Psikiater dikembangkan sebagai proyek penelitian di
+NEUROVELIS + Forward Psikiater dikembangkan sebagai proyek penelitian di
 **Universitas Harapan Bangsa**, dan hak atas karya ini berada pada institusi beserta
 tim pengembangnya.
 
@@ -77,7 +77,7 @@ Panduan lanjutan tersedia pada direktori [docs/](docs/): penerapan model
 
 ## Lisensi
 
-Dirilis di bawah [Lisensi MIT](LICENSE). Hak cipta © 2026 Tim NEUROSENSE,
+Dirilis di bawah [Lisensi MIT](LICENSE). Hak cipta © 2026 Tim NEUROVELIS,
 Universitas Harapan Bangsa.
 
 ---
@@ -85,7 +85,7 @@ Universitas Harapan Bangsa.
 ## Struktur Proyek
 
 ```
-NEUROSENSE + Forward Psikiater
+NEUROVELIS + Forward Psikiater
 ├─ dashboard
 │  ├─ static
 │  │  ├─ css

@@ -52,7 +52,7 @@ echo "[ok] authtoken valid"
 
 cat > "$SERVICE_FILE" << EOF
 [Unit]
-Description=ngrok tunnel for NEUROSENSE
+Description=ngrok tunnel for NEUROVELIS
 After=network-online.target
 Wants=network-online.target
 
