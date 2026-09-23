@@ -20,3 +20,7 @@ venv/
 # Runtime session outputs (keep directory structure only)
 data/sessions/*
 !data/sessions/.gitkeep
+
+# Agent/tooling local state
+.claude/
+.remember/
