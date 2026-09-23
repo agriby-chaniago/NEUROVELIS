@@ -49,7 +49,7 @@ Koordinasi pengembangan serta pemeliharaan repositori dilakukan melalui akun
 [@agriby-chaniago](https://github.com/agriby-chaniago).
 
 Pertanyaan, laporan bug, dan usulan perbaikan silakan disampaikan melalui
-[GitHub Issues](https://github.com/agriby-chaniago/NEUROSENSE/issues) pada repositori ini.
+[GitHub Issues](https://github.com/agriby-chaniago/NEUROVELIS/issues) pada repositori ini.
 
 ---
 
